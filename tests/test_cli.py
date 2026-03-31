@@ -30,4 +30,6 @@ def test_version():
         text=True,
     )
     assert result.returncode == 0
-    assert '0.1.0' in result.stdout
+    from importlib.metadata import version  # noqa: PLC0415
+
+    assert version('pyvista-tui') in result.stdout
