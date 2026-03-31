@@ -7,7 +7,6 @@ import shutil
 from typing import TYPE_CHECKING
 
 from rich.console import Console
-from textual_image.renderable import Image as TermImage
 
 from pyvista_tui.effects import apply_theme_effect, text_mode_for_theme
 from pyvista_tui.renderer import OffScreenRenderer
@@ -65,6 +64,8 @@ def display_frame(
     else:
         display_width = shutil.get_terminal_size().columns if full_width else char_w
         if not try_iterm2_inline(frame, filename, display_width):
+            from textual_image.renderable import Image as TermImage  # noqa: PLC0415
+
             console.print(
                 TermImage(frame, width=display_width, height='auto'),
             )
