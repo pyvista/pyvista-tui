@@ -6,6 +6,9 @@ Renders meshes directly in your terminal using off-screen VTK rendering, no GUI 
 Supports any file format PyVista can read (STL, VTK, PLY, OBJ, and dozens more).
 Works as a standalone CLI or directly in a standard Python or IPython interpreter.
 
+> [!NOTE]
+> FYI, there is a [feature request for this in PyVista](https://github.com/pyvista/pyvista/issues/8428) and this project is honestly just for having a good time in the terminal.
+
 ![FEA bracket rendered inline](assets/ipython.png)
 
 ## Installation
@@ -147,25 +150,23 @@ pyvista-tui report
 
 ## Terminal Compatibility
 
+> [!CAUTION]
+> I've only tested this in iTerm2 and VSCode's terminal on my Mac.
+> Help me make it work in more terminals, contributions welcome!
+
 pyvista-tui adapts rendering to your terminal's capabilities.
 For best results, use a terminal with native image protocol support.
 
-| Terminal       | Image Protocol             | Quality |
-| -------------- | -------------------------- | ------- |
-| iTerm2         | Inline images              | Best    |
-| WezTerm / foot | Sixel                      | High    |
-| Kitty          | Terminal Graphics Protocol | High    |
-| VS Code        | Halfcell blocks            | Low     |
-| Other          | Halfcell blocks            | Varies  |
-
-> **Note:** VS Code's integrated terminal does not support Sixel or any image
-> protocol. It falls back to halfcell block characters which are very low
-> resolution. For the best experience, run pyvista-tui in iTerm2, WezTerm, or
-> Kitty. Text-based themes (`-t braille`, `-t matrix`, etc.) look good in any
-> terminal including VS Code.
+> [!TIP]
+> Text-based themes (`-t braille`, `-t matrix`, etc.) look good in any terminal
+> including VS Code.
 
 The terminal background color is auto-detected via OSC 11 so rendered images
 blend with your color scheme. Override with `--background`.
+
+> [!CAUTION]
+> VS Code's integrated terminal does not support any image protocol and
+> falls back to low-resolution halfcell blocks.
 
 ## Development
 

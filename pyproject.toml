@@ -9,7 +9,7 @@ description = 'Interactive 3D mesh visualization in the terminal using PyVista.'
 readme = 'README.md'
 license = 'MIT'
 requires-python = '>=3.10'
-authors = [{ name = 'The PyVista Developers' }]
+authors = [{ name = 'The PyVista Developers', email = 'info@pyvista.org' }]
 classifiers = [
   'Development Status :: 3 - Alpha',
   'Intended Audience :: Developers',
@@ -168,3 +168,4 @@ pyvista_tui = ['py.typed']
 
 [tool.setuptools.packages.find]
 where = ['.']
+include = ['pyvista_tui*']
