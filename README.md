@@ -9,7 +9,7 @@ Works as a standalone CLI or directly in a standard Python or IPython interprete
 > [!NOTE]
 > FYI, there is a [feature request for this in PyVista](https://github.com/pyvista/pyvista/issues/8428) and this project is honestly just for having a good time in the terminal.
 
-![FEA bracket rendered inline](assets/ipython.png)
+![FEA bracket rendered inline](https://raw.githubusercontent.com/pyvista/pyvista-tui/main/assets/ipython.png)
 
 ## Installation
 
@@ -50,7 +50,7 @@ plot(examples.download_fea_bracket(), scalars="Equivalent (von-Mises) Stress (ps
 
 Text-based themes work in every terminal -- they use only Unicode and ANSI colors.
 
-![Braille Unicode rendering](assets/braille.png)
+![Braille Unicode rendering](https://raw.githubusercontent.com/pyvista/pyvista-tui/main/assets/braille.png)
 
 ```bash
 pyvista-tui mesh.vtk -t braille    # Unicode braille (8x density)
@@ -106,7 +106,7 @@ Launch with `-i` for full keyboard-driven 3D navigation.
 
 Render 6 axis-aligned views in a single image:
 
-![Six axis-aligned views of the Stanford dragon](assets/gallery.png)
+![Six axis-aligned views of the Stanford dragon](https://raw.githubusercontent.com/pyvista/pyvista-tui/main/assets/gallery.png)
 
 ```bash
 pyvista-tui mesh.vtk --gallery --center
