@@ -7,7 +7,7 @@ Supports any file format PyVista can read (STL, VTK, PLY, OBJ, and dozens more).
 Works as a standalone CLI or directly in a standard Python or IPython interpreter.
 
 > [!NOTE]
-> FYI, there is a [feature request for this in PyVista](https://github.com/pyvista/pyvista/issues/8428) and this project is honestly just for having a good time in the terminal.
+> FYI, there is a legitimate [feature request for this in PyVista](https://github.com/pyvista/pyvista/issues/8428), however this project is honestly one big April Fools joke that proved to have some actual utility.
 
 ![FEA bracket rendered inline](https://raw.githubusercontent.com/pyvista/pyvista-tui/main/assets/ipython.png)
 
