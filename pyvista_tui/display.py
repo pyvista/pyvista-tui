@@ -131,9 +131,15 @@ def render_inline(
     display_frame(frame, console, theme=theme, filename=filename)
 
     if export_ascii is not None:
-        ascii_text = image_to_ascii(frame, width=80, height=40)
+        text_mode = text_mode_for_theme(theme)
+        if text_mode == 'braille':
+            export_text = image_to_braille(frame, width=80, height=40)
+        elif text_mode == 'matrix':
+            export_text = image_to_matrix(frame, width=80, height=40)
+        else:
+            export_text = image_to_ascii(frame, width=80, height=40)
         out = Path(export_ascii)
-        out.write_text(str(ascii_text))
+        out.write_text(str(export_text))
         console.print(f'[dim]Exported ASCII art: {out.resolve()}[/dim]')
 
     if save is not None:

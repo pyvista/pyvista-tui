@@ -337,7 +337,9 @@ def main(
             width=render_width,
             height=render_height,
             background=background,
+            theme=theme,
             save=save,
+            export_ascii=export_ascii,
         )
     elif rotate_gif is not None:
         render_gif(

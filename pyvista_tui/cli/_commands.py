@@ -14,7 +14,7 @@ from rich.prompt import Prompt
 from textual_image.renderable import Image as TermImage
 
 from pyvista_tui.display import display_frame, render_inline
-from pyvista_tui.effects import apply_theme_effect
+from pyvista_tui.effects import apply_theme_effect, text_mode_for_theme
 from pyvista_tui.renderer import OffScreenRenderer, ViewAxis, prepare_mesh, resolve_mesh
 from pyvista_tui.terminal import try_iterm2_inline
 
@@ -30,9 +30,15 @@ def render_gallery(
     width: int,
     height: int,
     background: str | None = None,
+    theme: str = 'default',
     save: bool = False,
+    export_ascii: str | None = None,
 ) -> None:
     """Render 6 axis-aligned views as a 2x3 grid image.
+
+    For text-mode themes (braille, retro, matrix, etc.) each view is
+    rendered at full size and printed sequentially with a label.  For
+    image-mode themes the views are composited into a 2x3 grid.
 
     Parameters
     ----------
@@ -51,10 +57,27 @@ def render_gallery(
     background : str or None, optional
         Background color.
 
+    theme : str, default: 'default'
+        Rendering theme.
+
     save : bool, default: ``False``
         Save the grid image as PNG.
 
+    export_ascii : str or None, optional
+        Path to export text gallery. Only used with text-mode themes.
+
     """
+    view_labels = {
+        'x': '+X (Right)',
+        '-x': '-X (Left)',
+        'y': '+Y (Back)',
+        '-y': '-Y (Front)',
+        'z': '+Z (Top)',
+        '-z': '-Z (Bottom)',
+    }
+    views: list[ViewAxis] = ['x', '-x', 'y', '-y', 'z', '-z']
+    text_mode = text_mode_for_theme(theme)
+
     with OffScreenRenderer(
         prepared.mesh,
         window_size=(width, height),
@@ -63,29 +86,58 @@ def render_gallery(
         use_terminal_theme=prepared.use_terminal_theme,
         mesh_kwargs=prepared.mesh_kwargs,
     ) as renderer:
-        views: list[ViewAxis] = ['x', '-x', 'y', '-y', 'z', '-z']
         tiles: list[PILImage.Image] = []
         for view_axis in views:
             renderer.set_view(view_axis)
-            tiles.append(renderer.render_frame())
-
-    tile_w, tile_h = tiles[0].size
-    grid = PILImage.new('RGBA', (tile_w * 3, tile_h * 2))
-    for idx, tile in enumerate(tiles):
-        col = idx % 3
-        row = idx // 3
-        grid.paste(tile, (col * tile_w, row * tile_h))
+            tiles.append(apply_theme_effect(renderer.render_frame(), theme))
 
     console = Console()
-    term_cols = shutil.get_terminal_size().columns
-    filename = Path(mesh_path).stem + '_gallery.png'
-    if not try_iterm2_inline(grid, filename, term_cols):
-        console.print(TermImage(grid, width=term_cols, height='auto'))
 
-    if save:
-        out = Path(mesh_path).stem + '_gallery.png'
-        grid.save(out, format='PNG')
-        console.print(f'[dim]Saved: {Path(out).resolve()}[/dim]')
+    if text_mode != 'normal':
+        # Text-mode themes: print each view at full size with a label
+        export_lines: list[str] = []
+        for view_axis, tile in zip(views, tiles, strict=True):
+            label = view_labels[view_axis]
+            console.print(f'\n[bold cyan]── {label} ──[/bold cyan]')
+            display_frame(tile, console, theme=theme)
+            if export_ascii is not None:
+                from pyvista_tui.utils.text import (  # noqa: PLC0415
+                    image_to_ascii,
+                    image_to_braille,
+                    image_to_matrix,
+                )
+
+                export_lines.append(f'── {label} ──')
+                if text_mode == 'braille':
+                    export_lines.append(str(image_to_braille(tile, width=80, height=40)))
+                elif text_mode == 'matrix':
+                    export_lines.append(str(image_to_matrix(tile, width=80, height=40)))
+                else:
+                    export_lines.append(str(image_to_ascii(tile, width=80, height=40)))
+                export_lines.append('')
+
+        if export_ascii is not None:
+            out = Path(export_ascii)
+            out.write_text('\n'.join(export_lines))
+            console.print(f'[dim]Exported gallery text: {out.resolve()}[/dim]')
+    else:
+        # Image-mode themes: composite into a 2x3 grid
+        tile_w, tile_h = tiles[0].size
+        grid = PILImage.new('RGBA', (tile_w * 3, tile_h * 2))
+        for idx, tile in enumerate(tiles):
+            col = idx % 3
+            row = idx // 3
+            grid.paste(tile, (col * tile_w, row * tile_h))
+
+        term_cols = shutil.get_terminal_size().columns
+        filename = Path(mesh_path).stem + '_gallery.png'
+        if not try_iterm2_inline(grid, filename, term_cols):
+            console.print(TermImage(grid, width=term_cols, height='auto'))
+
+        if save:
+            out_path = Path(mesh_path).stem + '_gallery.png'
+            grid.save(out_path, format='PNG')
+            console.print(f'[dim]Saved: {Path(out_path).resolve()}[/dim]')
 
 
 def render_compare(
