@@ -30,7 +30,7 @@ dependencies = [
   'pyvista>=0.43',
   'rich>=13.0',
   'textual>=1.0',
-  'textual-image>=0.5',
+  'textual-image>=0.8.5',
 ]
 
 [project.optional-dependencies]

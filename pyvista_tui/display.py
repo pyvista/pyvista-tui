@@ -10,7 +10,12 @@ from rich.console import Console
 
 from pyvista_tui.effects import apply_theme_effect, text_mode_for_theme
 from pyvista_tui.renderer import OffScreenRenderer
-from pyvista_tui.terminal import get_terminal_render_size, try_iterm2_inline
+from pyvista_tui.terminal import (
+    PROBE_ERRORS,
+    get_terminal_render_size,
+    load_textual_image_class,
+    try_iterm2_inline,
+)
 from pyvista_tui.utils.text import image_to_ascii, image_to_braille, image_to_matrix
 
 __all__ = ['display_frame', 'launch_interactive', 'render_inline']
@@ -64,11 +69,30 @@ def display_frame(
     else:
         display_width = shutil.get_terminal_size().columns if full_width else char_w
         if not try_iterm2_inline(frame, filename, display_width):
-            from textual_image.renderable import Image as TermImage  # noqa: PLC0415
+            _print_termimage_or_ascii(frame, console, display_width, char_h)
 
-            console.print(
-                TermImage(frame, width=display_width, height='auto'),
-            )
+
+def _print_termimage_or_ascii(
+    frame: PILImage.Image,
+    console: Console,
+    display_width: int,
+    ascii_height: int,
+) -> None:
+    """Print an image via ``textual_image`` with ASCII fallback.
+
+    If ``textual_image`` cannot be imported (e.g. its module-level
+    terminal probes crash on an unresponsive TTY) or the renderable
+    raises while rendering, fall back to ASCII so the CLI still
+    produces visible output instead of a traceback.
+    """
+    term_image_cls = load_textual_image_class()
+    if term_image_cls is not None:
+        try:
+            console.print(term_image_cls(frame, width=display_width, height='auto'))
+            return
+        except PROBE_ERRORS:
+            pass
+    console.print(image_to_ascii(frame, width=display_width, height=ascii_height))
 
 
 def render_inline(
