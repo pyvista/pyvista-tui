@@ -11,12 +11,12 @@ from typing import TYPE_CHECKING
 from PIL import Image as PILImage
 from rich.console import Console
 from rich.prompt import Prompt
-from textual_image.renderable import Image as TermImage
 
 from pyvista_tui.display import display_frame, render_inline
 from pyvista_tui.effects import apply_theme_effect, text_mode_for_theme
 from pyvista_tui.renderer import OffScreenRenderer, ViewAxis, prepare_mesh, resolve_mesh
-from pyvista_tui.terminal import try_iterm2_inline
+from pyvista_tui.terminal import PROBE_ERRORS, load_textual_image_class, try_iterm2_inline
+from pyvista_tui.utils.text import image_to_ascii, image_to_braille, image_to_matrix
 
 if TYPE_CHECKING:
     from pyvista_tui.renderer import PreparedMesh
@@ -101,12 +101,6 @@ def render_gallery(
             console.print(f'\n[bold cyan]── {label} ──[/bold cyan]')
             display_frame(tile, console, theme=theme)
             if export_ascii is not None:
-                from pyvista_tui.utils.text import (  # noqa: PLC0415
-                    image_to_ascii,
-                    image_to_braille,
-                    image_to_matrix,
-                )
-
                 export_lines.append(f'── {label} ──')
                 if text_mode == 'braille':
                     export_lines.append(str(image_to_braille(tile, width=80, height=40)))
@@ -132,7 +126,16 @@ def render_gallery(
         term_cols = shutil.get_terminal_size().columns
         filename = Path(mesh_path).stem + '_gallery.png'
         if not try_iterm2_inline(grid, filename, term_cols):
-            console.print(TermImage(grid, width=term_cols, height='auto'))
+            term_image_cls = load_textual_image_class()
+            rendered = False
+            if term_image_cls is not None:
+                try:
+                    console.print(term_image_cls(grid, width=term_cols, height='auto'))
+                    rendered = True
+                except PROBE_ERRORS:
+                    pass
+            if not rendered:
+                console.print(image_to_ascii(grid, width=term_cols, height=term_cols // 2))
 
         if save:
             out_path = Path(mesh_path).stem + '_gallery.png'
