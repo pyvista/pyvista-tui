@@ -10,6 +10,8 @@ from pyvista_tui.renderer import prepare_mesh
 if TYPE_CHECKING:
     from pyvista import DataSet, MultiBlock
 
+    from pyvista_tui.renderer import CposString
+
 
 def plot(
     mesh: DataSet | MultiBlock,
@@ -32,6 +34,7 @@ def plot(
     log_scale: bool = False,
     rainbow: bool = False,
     center: bool = False,
+    cpos: CposString | None = None,
 ) -> None:
     """Plot a PyVista mesh inline in the terminal.
 
@@ -96,6 +99,11 @@ def plot(
     center : bool, default: ``False``
         Center and normalize the mesh to fill the viewport.
 
+    cpos : CposString or None, optional
+        Initial camera position string — one of ``'xy'``, ``'yx'``,
+        ``'xz'``, ``'zx'``, ``'yz'``, ``'zy'``, or ``'iso'``. See
+        :meth:`~pyvista_tui.renderer.OffScreenRenderer.set_cpos`.
+
     """
     prepared = prepare_mesh(
         mesh,
@@ -126,6 +134,7 @@ def plot(
             height=window_size[1] if window_size else None,
             background=background,
             theme=theme,
+            cpos=cpos,
         )
     else:
         render_inline(
@@ -134,4 +143,5 @@ def plot(
             height=window_size[1] if window_size else 576,
             background=background,
             theme=theme,
+            cpos=cpos,
         )

@@ -19,7 +19,7 @@ from pyvista_tui.terminal import PROBE_ERRORS, load_textual_image_class, try_ite
 from pyvista_tui.utils.text import image_to_ascii, image_to_braille, image_to_matrix
 
 if TYPE_CHECKING:
-    from pyvista_tui.renderer import PreparedMesh
+    from pyvista_tui.renderer import CposString, PreparedMesh
     from pyvista_tui.utils.loader import MeshLoader
 
 
@@ -67,7 +67,9 @@ def render_gallery(
         Path to export text gallery. Only used with text-mode themes.
 
     """
-    view_labels = {
+    # Engineering-convention axis-aligned views (Z-up for sides,
+    # Y-up for top/bottom). See ViewAxis vs CposString in renderer.py.
+    view_labels: dict[ViewAxis, str] = {
         'x': '+X (Right)',
         '-x': '-X (Left)',
         'y': '+Y (Back)',
@@ -75,7 +77,6 @@ def render_gallery(
         'z': '+Z (Top)',
         '-z': '-Z (Bottom)',
     }
-    views: list[ViewAxis] = ['x', '-x', 'y', '-y', 'z', '-z']
     text_mode = text_mode_for_theme(theme)
 
     with OffScreenRenderer(
@@ -87,7 +88,7 @@ def render_gallery(
         mesh_kwargs=prepared.mesh_kwargs,
     ) as renderer:
         tiles: list[PILImage.Image] = []
-        for view_axis in views:
+        for view_axis in view_labels:
             renderer.set_view(view_axis)
             tiles.append(apply_theme_effect(renderer.render_frame(), theme))
 
@@ -96,7 +97,7 @@ def render_gallery(
     if text_mode != 'normal':
         # Text-mode themes: print each view at full size with a label
         export_lines: list[str] = []
-        for view_axis, tile in zip(views, tiles, strict=True):
+        for view_axis, tile in zip(view_labels, tiles, strict=True):
             label = view_labels[view_axis]
             console.print(f'\n[bold cyan]── {label} ──[/bold cyan]')
             display_frame(tile, console, theme=theme)
@@ -152,6 +153,7 @@ def render_compare(
     background: str | None = None,
     theme: str = 'default',
     rainbow: bool = False,
+    cpos: CposString | None = None,
 ) -> None:
     """Render two meshes side-by-side for comparison.
 
@@ -178,6 +180,11 @@ def render_compare(
     rainbow : bool, default: ``False``
         Whether rainbow mode is active for the compare mesh.
 
+    cpos : CposString or None, optional
+        Initial camera position string applied to both renderers. See
+        :meth:`~pyvista_tui.renderer.OffScreenRenderer.set_cpos` for
+        the accepted values.
+
     """
     with OffScreenRenderer(
         prepared.mesh,
@@ -186,6 +193,7 @@ def render_compare(
         background=background,
         use_terminal_theme=prepared.use_terminal_theme,
         mesh_kwargs=prepared.mesh_kwargs,
+        cpos=cpos,
     ) as renderer:
         frame = renderer.render_frame()
 
@@ -197,6 +205,7 @@ def render_compare(
         background=background,
         use_terminal_theme=prepared.use_terminal_theme,
         mesh_kwargs=prepared.mesh_kwargs,
+        cpos=cpos,
     ) as renderer2:
         frame2 = renderer2.render_frame()
 

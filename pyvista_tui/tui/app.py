@@ -19,6 +19,7 @@ if TYPE_CHECKING:
     from pyvista import DataSet, MultiBlock
     from textual.events import Key
 
+    from pyvista_tui.renderer import CposString
     from pyvista_tui.utils.loader import MeshLoader
 
 logger = logging.getLogger(__name__)
@@ -68,6 +69,11 @@ class TuiApp(App):
     mesh : pyvista.DataSet or None, optional
         In-memory mesh object.
 
+    cpos : CposString or None, optional
+        Initial camera position string. See
+        :meth:`~pyvista_tui.renderer.OffScreenRenderer.set_cpos` for
+        the accepted values.
+
     """
 
     BINDINGS: ClassVar[list[BindingType]] = [
@@ -105,6 +111,7 @@ class TuiApp(App):
         bounce: bool = False,
         show_boot: bool = False,
         mesh: DataSet | MultiBlock | None = None,
+        cpos: CposString | None = None,
     ) -> None:
         super().__init__()
         self._mesh_path = mesh_path
@@ -120,6 +127,7 @@ class TuiApp(App):
         self._spin = spin
         self._bounce = bounce
         self._show_boot = show_boot
+        self._cpos = cpos
         self._renderer: OffScreenRenderer | None = None
         self._controller: KeyboardCameraController | None = None
 
@@ -198,6 +206,7 @@ class TuiApp(App):
             background=self._background,
             use_terminal_theme=self._use_terminal_theme,
             mesh_kwargs=self._mesh_kwargs,
+            cpos=self._cpos,
         )
         self._controller = KeyboardCameraController(self._renderer)
 

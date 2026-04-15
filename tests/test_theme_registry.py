@@ -14,6 +14,7 @@ from pyvista_tui.effects import (
     apply_theme_effect,
     text_mode_for_theme,
 )
+from pyvista_tui.renderer import CPOS_STRINGS, CposString
 
 # --- Registry integrity ---
 
@@ -47,6 +48,17 @@ def test_registry_cli_literal_matches_registry():
         f'ThemeChoice Literal is out of sync with THEME_REGISTRY. '
         f'Missing from Literal: {registry_names - literal_names}. '
         f'Extra in Literal: {literal_names - registry_names}.'
+    )
+
+
+def test_cpos_literal_matches_pyvista():
+    literal_values = set(get_args(CposString))
+    pv_values = set(CPOS_STRINGS)
+    assert literal_values == pv_values, (
+        f'CposString Literal is out of sync with '
+        f'pyvista.Renderer.CAMERA_STR_ATTR_MAP. '
+        f'Missing from Literal: {pv_values - literal_values}. '
+        f'Extra in Literal: {literal_values - pv_values}.'
     )
 
 

@@ -23,18 +23,20 @@ Requires Python 3.10+.
 
 ### CLI
 
+The CLI is exposed as both `pyvista-tui` and the shorter alias `pvtui`.
+
 ```bash
 # Render a mesh inline
-pyvista-tui mesh.stl
+pvtui mesh.stl
 
 # Interactive viewer with vim-style controls
-pyvista-tui mesh.vtk -i
+pvtui mesh.vtk -i
 
 # Color by a scalar array with a colormap
-pyvista-tui mesh.vtk --scalars temperature --cmap coolwarm
+pvtui mesh.vtk --scalars temperature --cmap coolwarm
 
 # Gallery view (6 axis-aligned views)
-pyvista-tui part.stl --gallery
+pvtui part.stl --gallery
 ```
 
 ### Python API

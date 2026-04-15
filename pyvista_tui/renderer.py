@@ -22,9 +22,9 @@ if TYPE_CHECKING:
 MAX_ELEVATION = math.pi / 2 - 0.008  # ~89.5 degrees, prevents pole-crossing
 ZOOM_BASE = 1.03  # Exponential dolly factor per step
 
-ViewAxis = Literal['x', 'y', 'z', '-x', '-y', '-z']
-
 __all__ = [
+    'CPOS_STRINGS',
+    'CposString',
     'OffScreenRenderer',
     'PreparedMesh',
     'ViewAxis',
@@ -33,6 +33,34 @@ __all__ = [
     'prepare_mesh',
     'resolve_mesh',
 ]
+
+#: Axis-aligned view identifiers used by :meth:`OffScreenRenderer.set_view`.
+#:
+#: These describe *camera placement along a principal axis* with a
+#: consistent Z-up convention for side views and Y-up for top/bottom.
+#: This is the engineering-CAD convention the gallery and TUI axis
+#: hotkeys rely on — and is intentionally *different* from PyVista's
+#: ``camera_position`` strings (see :data:`CposString`), which use a
+#: per-pair up-vector convention that rotates the image between views.
+ViewAxis = Literal['x', '-x', 'y', '-y', 'z', '-z']
+
+#: Camera-position strings accepted by :attr:`pyvista.Plotter.camera_position`.
+#:
+#: Explicit ``Literal`` kept in sync with
+#: :attr:`pyvista.Renderer.CAMERA_STR_ATTR_MAP` by
+#: ``test_cpos_literal_matches_pyvista``. Defined statically because mypy
+#: cannot handle a ``Literal`` whose arguments are computed at runtime.
+#:
+#: These follow PyVista's convention where the letters name the visible
+#: plane's horizontal and vertical axes — so different strings rotate
+#: the image relative to one another. When you need a consistent
+#: engineering-CAD orientation across side views, use
+#: :meth:`OffScreenRenderer.set_view` with :data:`ViewAxis` instead.
+CposString = Literal['xy', 'yx', 'xz', 'zx', 'yz', 'zy', 'iso']
+
+#: Runtime tuple of valid camera-position strings, sourced from PyVista so
+#: the sync test can catch upstream additions.
+CPOS_STRINGS: tuple[str, ...] = tuple(pv.Renderer.CAMERA_STR_ATTR_MAP)
 
 
 def _rotate_turntable(camera: Camera, d_azimuth: float, d_elevation: float) -> None:
@@ -473,6 +501,10 @@ class OffScreenRenderer:
         Extra keyword arguments forwarded to
         :func:`pyvista.Plotter.add_mesh`.
 
+    cpos : CposString or None, optional
+        Initial camera position string (e.g. ``'xy'``, ``'iso'``).
+        See :meth:`set_cpos` for the accepted values.
+
     """
 
     def __init__(
@@ -484,6 +516,7 @@ class OffScreenRenderer:
         background: str | None = None,
         use_terminal_theme: bool = False,
         mesh_kwargs: dict[str, object] | None = None,
+        cpos: CposString | None = None,
     ) -> None:
         theme = TerminalTheme() if use_terminal_theme else pv.themes.DarkTheme()
         self._plotter = pv.Plotter(
@@ -549,6 +582,9 @@ class OffScreenRenderer:
 
         self._dirty = True
         self._last_frame: Image.Image | None = None
+
+        if cpos is not None:
+            self.set_cpos(cpos)
 
     def __enter__(self) -> OffScreenRenderer:
         """Return self for use as a context manager."""
@@ -703,39 +739,80 @@ class OffScreenRenderer:
         self._dirty = True
 
     def set_view(self, axis: ViewAxis) -> None:
-        """Set the camera to an axis-aligned view.
+        """Set the camera to an engineering-convention axis-aligned view.
+
+        Places the camera along the given principal axis with a
+        consistent Z-up vector for the four side views and Y-up for
+        top/bottom, matching standard CAD orthographic projections.
+
+        This is intentionally distinct from :meth:`set_cpos`, which
+        exposes PyVista's ``camera_position`` strings — those use a
+        per-pair up-vector convention that rotates the image between
+        ``'xy'``/``'yx'``/``'xz'``/``'zx'``/``'yz'``/``'zy'``.
 
         Parameters
         ----------
-        axis : str
-            One of ``'x'``, ``'y'``, ``'z'``, ``'-x'``, ``'-y'``,
-            or ``'-z'``.
+        axis : ViewAxis
+            One of ``'x'``, ``'-x'``, ``'y'``, ``'-y'``, ``'z'``, or
+            ``'-z'`` — the principal axis the camera is placed along.
 
         """
-        camera = self._plotter.camera
-
-        # Direction vectors for each axis-aligned view
-        directions: dict[ViewAxis, tuple[float, float, float]] = {
-            'x': (1, 0, 0),
-            '-x': (-1, 0, 0),
-            'y': (0, 1, 0),
-            '-y': (0, -1, 0),
-            'z': (0, 0, 1),
-            '-z': (0, 0, -1),
+        # Camera direction and up vector for each axis-aligned view.
+        # Side views use Z-up; top/bottom use Y-up.
+        directions: dict[ViewAxis, tuple[tuple[int, int, int], tuple[int, int, int]]] = {
+            'x': ((1, 0, 0), (0, 0, 1)),
+            '-x': ((-1, 0, 0), (0, 0, 1)),
+            'y': ((0, 1, 0), (0, 0, 1)),
+            '-y': ((0, -1, 0), (0, 0, 1)),
+            'z': ((0, 0, 1), (0, 1, 0)),
+            '-z': ((0, 0, -1), (0, 1, 0)),
         }
-        d = directions[axis]
+        direction, up = directions[axis]
+        camera = self._plotter.camera
         center = self._mesh.center
-
-        # Place camera along the axis, then let VTK fit the view
         camera.focal_point = center
-        camera.position = (center[0] + d[0], center[1] + d[1], center[2] + d[2])
-        camera.up = (0, 1, 0) if axis in ('z', '-z') else (0, 0, 1)
+        camera.position = (
+            center[0] + direction[0],
+            center[1] + direction[1],
+            center[2] + direction[2],
+        )
+        camera.up = up
 
-        # reset_camera fits the view, then zoom in slightly to reduce
-        # the padding VTK leaves around the bounding box
-        # PyVista's _Wrapped decorator confuses mypy's call-arg analysis
+        # reset_camera fits the view to the mesh, then the dolly tightens
+        # the framing to reduce VTK's default padding.
+        # PyVista's _Wrapped decorator confuses mypy's call-arg analysis.
         self._plotter.reset_camera()  # type: ignore[call-arg]
         _apply_dolly(camera, -3)
+        self._plotter.renderer.reset_camera_clipping_range()
+        self._dirty = True
+
+    def set_cpos(self, cpos: CposString) -> None:
+        """Set the camera to a PyVista-style position string.
+
+        Parameters
+        ----------
+        cpos : CposString
+            Any string accepted by
+            :attr:`pyvista.Plotter.camera_position`: ``'xy'``,
+            ``'yx'``, ``'xz'``, ``'zx'``, ``'yz'``, ``'zy'``, or
+            ``'iso'``.
+
+        Raises
+        ------
+        ValueError
+            If *cpos* is not one of the supported strings.
+
+        """
+        if cpos not in CPOS_STRINGS:
+            msg = f'Unknown cpos {cpos!r}. Expected one of: {", ".join(CPOS_STRINGS)}.'
+            raise ValueError(msg)
+        # PyVista's ``camera_position`` setter accepts several types and
+        # its type stub does not include ``str``; the runtime check above
+        # ensures we only pass valid strings.
+        self._plotter.camera_position = cpos  # type: ignore[assignment]
+        # Tighten the fit so the mesh fills the viewport — pyvista's
+        # view_* methods call reset_camera() which leaves VTK padding.
+        _apply_dolly(self._plotter.camera, -3)
         self._plotter.renderer.reset_camera_clipping_range()
         self._dirty = True
 

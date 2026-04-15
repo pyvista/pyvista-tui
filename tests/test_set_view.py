@@ -1,18 +1,9 @@
 from __future__ import annotations
 
-import math
-
 from PIL import Image
 import pyvista as pv
 
 from pyvista_tui.renderer import OffScreenRenderer
-
-
-def _camera_distance(renderer):
-    cam = renderer._plotter.camera
-    pos = cam.position
-    focal = cam.focal_point
-    return math.sqrt(sum((p - f) ** 2 for p, f in zip(pos, focal, strict=True)))
 
 
 def test_set_view_x(renderer):
@@ -69,6 +60,13 @@ def test_set_view_x_up_vector_is_z(renderer):
     cam = renderer._plotter.camera
     up = cam.up
     assert abs(up[2]) > 0.9
+
+
+def test_set_view_side_views_are_all_z_up(renderer):
+    for axis in ('x', '-x', 'y', '-y'):
+        renderer.set_view(axis)
+        up = renderer._plotter.camera.up
+        assert abs(up[2]) > 0.9, f'{axis} is not Z-up: {up}'
 
 
 def test_set_view_marks_dirty(renderer):

@@ -23,7 +23,7 @@ __all__ = ['display_frame', 'launch_interactive', 'render_inline']
 if TYPE_CHECKING:
     from PIL import Image as PILImage
 
-    from pyvista_tui.renderer import PreparedMesh
+    from pyvista_tui.renderer import CposString, PreparedMesh
     from pyvista_tui.utils.loader import MeshLoader
 
 
@@ -105,6 +105,7 @@ def render_inline(
     export_ascii: str | Path | None = None,
     save: str | Path | None = None,
     filename: str = 'mesh.png',
+    cpos: CposString | None = None,
 ) -> None:
     """Render a mesh to the terminal in a single shot.
 
@@ -138,6 +139,11 @@ def render_inline(
     filename : str, default: 'mesh.png'
         Display name for iTerm2 inline images.
 
+    cpos : CposString or None, optional
+        Initial camera position string. See
+        :meth:`~pyvista_tui.renderer.OffScreenRenderer.set_cpos` for
+        the accepted values.
+
     """
     with OffScreenRenderer(
         prepared.mesh,
@@ -146,6 +152,7 @@ def render_inline(
         background=background,
         use_terminal_theme=prepared.use_terminal_theme,
         mesh_kwargs=prepared.mesh_kwargs,
+        cpos=cpos,
     ) as renderer:
         frame = renderer.render_frame()
 
@@ -184,6 +191,7 @@ def launch_interactive(
     spin: bool = False,
     bounce: bool = False,
     show_boot: bool = False,
+    cpos: CposString | None = None,
 ) -> None:
     """Launch the interactive TUI with a prepared mesh.
 
@@ -223,6 +231,11 @@ def launch_interactive(
     show_boot : bool, default: ``False``
         Show the boot sequence screen.
 
+    cpos : CposString or None, optional
+        Initial camera position string. See
+        :meth:`~pyvista_tui.renderer.OffScreenRenderer.set_cpos` for
+        the accepted values.
+
     """
     from pyvista_tui.tui import TuiApp  # noqa: PLC0415
 
@@ -245,5 +258,6 @@ def launch_interactive(
         spin=spin,
         bounce=bounce,
         show_boot=show_boot,
+        cpos=cpos,
     )
     tui.run()

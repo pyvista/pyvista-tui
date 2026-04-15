@@ -80,7 +80,7 @@ class KeyboardCameraController:
         elif key == 'n':
             r.cycle_scalars()
 
-        # Axis-aligned views
+        # Axis-aligned views (engineering convention — Z-up for sides)
         elif key == 'x':
             r.set_view('x')
         elif key == 'y':

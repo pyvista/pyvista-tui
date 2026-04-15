@@ -23,7 +23,7 @@ from pyvista_tui.cli._commands import (
 )
 from pyvista_tui.display import launch_interactive, render_inline
 from pyvista_tui.effects import THEME_REGISTRY
-from pyvista_tui.renderer import prepare_mesh
+from pyvista_tui.renderer import CposString, prepare_mesh
 from pyvista_tui.terminal import query_background_color
 from pyvista_tui.tui.boot import boot_sequence
 from pyvista_tui.utils.loader import MeshLoader
@@ -247,6 +247,16 @@ def main(
             group=_RENDER,
         ),
     ] = None,
+    cpos: Annotated[
+        CposString | None,
+        Parameter(
+            help=(
+                'Initial camera position. Any string supported by '
+                "PyVista's `Plotter.camera_position`."
+            ),
+            group=_RENDER,
+        ),
+    ] = None,
 ) -> None:
     """Render a 3D mesh in the terminal."""
     if debug:
@@ -329,6 +339,7 @@ def main(
             spin=spin,
             bounce=bounce,
             show_boot=show_boot,
+            cpos=cpos,
         )
     elif gallery:
         render_gallery(
@@ -358,6 +369,7 @@ def main(
             background=background,
             theme=theme,
             rainbow=rainbow,
+            cpos=cpos,
         )
     else:
         render_inline(
@@ -369,6 +381,7 @@ def main(
             export_ascii=export_ascii,
             save=Path(mesh).stem + '.png' if save else None,
             filename=Path(mesh).stem + '.png',
+            cpos=cpos,
         )
 
         if watch:

@@ -4,7 +4,7 @@ requires = ['setuptools>=77.0']
 
 [project]
 name = 'pyvista-tui'
-version = '0.1.2'
+version = '0.1.3'
 description = 'Interactive 3D mesh visualization in the terminal using PyVista.'
 readme = 'README.md'
 license = 'MIT'
@@ -45,6 +45,7 @@ dev = [
 
 [project.scripts]
 pyvista-tui = 'pyvista_tui.cli:app'
+pvtui = 'pyvista_tui.cli:app'
 
 [project.urls]
 Homepage = 'https://github.com/pyvista/pyvista-tui'

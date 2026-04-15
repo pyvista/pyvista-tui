@@ -4,7 +4,12 @@ from PIL import Image
 import pyvista as pv
 
 from pyvista_tui.effects import THEME_REGISTRY
-from pyvista_tui.renderer import OffScreenRenderer, PreparedMesh, prepare_mesh
+from pyvista_tui.renderer import (
+    CPOS_STRINGS,
+    OffScreenRenderer,
+    PreparedMesh,
+    prepare_mesh,
+)
 
 # --- prepare_mesh ---
 
@@ -107,6 +112,14 @@ def test_multiblock_set_view():
     with OffScreenRenderer(mb, window_size=(100, 100)) as r:
         for axis in ('x', '-x', 'y', '-y', 'z', '-z'):
             r.set_view(axis)
+            r.render_frame()
+
+
+def test_multiblock_set_cpos():
+    mb = pv.MultiBlock([pv.Sphere(), pv.Cube()])
+    with OffScreenRenderer(mb, window_size=(100, 100)) as r:
+        for cpos in CPOS_STRINGS:
+            r.set_cpos(cpos)
             r.render_frame()
 
 
