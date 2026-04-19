@@ -43,6 +43,13 @@ def test_supports_inline_wezterm(monkeypatch):
     assert supports_inline_image_protocol() is True
 
 
+def test_supports_inline_vscode(monkeypatch):
+    monkeypatch.setenv('TERM_PROGRAM', 'vscode')
+    monkeypatch.delenv('LC_TERMINAL', raising=False)
+    monkeypatch.setenv('TERM', 'xterm-256color')
+    assert supports_inline_image_protocol() is True
+
+
 def test_supports_inline_lc_terminal_over_ssh(monkeypatch):
     monkeypatch.delenv('TERM_PROGRAM', raising=False)
     monkeypatch.setenv('LC_TERMINAL', 'WezTerm')

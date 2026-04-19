@@ -15,7 +15,13 @@ if TYPE_CHECKING:
 # (OSC 1337 File=...).  WezTerm ships full support; iTerm2 is the
 # original.  Both set ``TERM_PROGRAM`` locally and ``LC_TERMINAL`` over
 # SSH (when the user opts in).
-_INLINE_TERMINALS = frozenset({'iTerm2', 'WezTerm'})
+#
+# VS Code's integrated terminal speaks OSC 1337 when the user enables
+# ``terminal.integrated.enableImages`` (and GPU acceleration is on).
+# The setting is opt-in, so users on a VS Code without images enabled
+# will see the escape sequence as text — they can either turn on image
+# support or export the transcript for a non-iTerm2 client.
+_INLINE_TERMINALS = frozenset({'iTerm2', 'WezTerm', 'vscode'})
 
 
 def supports_inline_image_protocol() -> bool:
