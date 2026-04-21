@@ -8,7 +8,7 @@ import shutil
 import time
 from typing import TYPE_CHECKING
 
-from PIL import Image as PILImage
+from PIL import Image as PILImage, ImageDraw
 from rich.console import Console
 from rich.prompt import Prompt
 
@@ -219,6 +219,156 @@ def render_compare(
 
     console = Console()
     display_frame(combined, console, theme=theme, full_width=True)
+
+
+def render_multi(
+    prepared_meshes: list[PreparedMesh],
+    labels: list[str],
+    *,
+    width: int,
+    height: int,
+    background: str | None = None,
+    theme: str = 'default',
+    cpos: CposString | None = None,
+    sequential: bool = False,
+    save: bool = False,
+) -> None:
+    """Render multiple meshes at a shared camera position.
+
+    Two layouts are supported:
+
+    - **Grid** (default for image themes): each mesh is rendered once
+      and composited into a square-ish grid with the supplied label
+      drawn on each tile.
+    - **Sequential** (``sequential=True`` or for text-mode themes):
+      each mesh is rendered full-size via
+      :func:`~pyvista_tui.display.render_inline` with its label printed
+      first — the same pipeline the single-mesh CLI path uses.
+
+    Parameters
+    ----------
+    prepared_meshes : list[PreparedMesh]
+        Meshes and per-mesh render config produced by
+        :func:`~pyvista_tui.renderer.prepare_mesh`.  Must be non-empty
+        and the same length as ``labels``.
+
+    labels : list[str]
+        Label drawn on each tile or printed as a header in sequential
+        mode (typically the file stem).
+
+    width : int
+        Render width in pixels per tile or per frame.
+
+    height : int
+        Render height in pixels per tile or per frame.
+
+    background : str or None, optional
+        Background color shared across all meshes.
+
+    theme : str, default: 'default'
+        Rendering theme.
+
+    cpos : CposString or None, optional
+        Camera position string applied to every mesh.  See
+        :meth:`~pyvista_tui.renderer.OffScreenRenderer.set_cpos` for
+        accepted values.
+
+    sequential : bool, default: ``False``
+        If ``True``, render each mesh full-size one after another
+        instead of tiling them into a grid.  Always ``True`` for
+        text-mode themes regardless of this flag.
+
+    save : bool, default: ``False``
+        Save to PNG.  Grid mode writes a single ``multi_<first>.png``;
+        sequential mode writes one ``<label>.png`` per mesh.
+
+    """
+    if not prepared_meshes:
+        msg = 'render_multi requires at least one mesh.'
+        raise ValueError(msg)
+    if len(prepared_meshes) != len(labels):
+        msg = (
+            f'labels length ({len(labels)}) must match '
+            f'prepared_meshes length ({len(prepared_meshes)}).'
+        )
+        raise ValueError(msg)
+
+    console = Console()
+    text_mode = text_mode_for_theme(theme)
+
+    if sequential or text_mode != 'normal':
+        for prepared, label in zip(prepared_meshes, labels, strict=True):
+            console.print(f'\n[bold cyan]── {label} ──[/bold cyan]')
+            render_inline(
+                prepared,
+                width=width,
+                height=height,
+                background=background,
+                theme=theme,
+                save=f'{label}.png' if save else None,
+                filename=f'{label}.png',
+                cpos=cpos,
+            )
+        return
+
+    # Grid path: pre-render all tiles, then composite.
+    tiles: list[PILImage.Image] = []
+    for prepared in prepared_meshes:
+        with OffScreenRenderer(
+            prepared.mesh,
+            window_size=(width, height),
+            wireframe=prepared.wireframe,
+            background=background,
+            use_terminal_theme=prepared.use_terminal_theme,
+            mesh_kwargs=prepared.mesh_kwargs,
+            cpos=cpos,
+        ) as renderer:
+            tiles.append(apply_theme_effect(renderer.render_frame(), theme))
+
+    cols = math.ceil(math.sqrt(len(tiles)))
+    rows = math.ceil(len(tiles) / cols)
+    tile_w, tile_h = tiles[0].size
+    grid = PILImage.new('RGBA', (tile_w * cols, tile_h * rows))
+    for idx, (label, tile) in enumerate(zip(labels, tiles, strict=True)):
+        _draw_tile_label(tile, label)
+        col = idx % cols
+        row = idx // cols
+        grid.paste(tile, (col * tile_w, row * tile_h))
+
+    term_cols = shutil.get_terminal_size().columns
+    filename = f'multi_{labels[0]}.png'
+    if not try_iterm2_inline(grid, filename, term_cols):
+        term_image_cls = load_textual_image_class()
+        rendered = False
+        if term_image_cls is not None:
+            try:
+                console.print(term_image_cls(grid, width=term_cols, height='auto'))
+                rendered = True
+            except PROBE_ERRORS:
+                pass
+        if not rendered:
+            console.print(image_to_ascii(grid, width=term_cols, height=term_cols // 2))
+
+    if save:
+        grid.save(filename, format='PNG')
+        console.print(f'[dim]Saved: {Path(filename).resolve()}[/dim]')
+
+
+def _draw_tile_label(tile: PILImage.Image, label: str) -> None:
+    """Draw a filename label onto the top-left corner of a tile.
+
+    Mutates ``tile`` in place with a dark backdrop + white text so it
+    stays legible over any background.
+    """
+    draw = ImageDraw.Draw(tile)
+    padding = 4
+    # textbbox requires a font; default font is fine for short stems
+    left, top, right, bottom = draw.textbbox((padding, padding), label)
+    draw.rectangle(
+        (left - padding, top - padding, right + padding, bottom + padding),
+        fill=(0, 0, 0, 180),
+    )
+    draw.text((padding, padding), label, fill=(255, 255, 255, 255))
 
 
 def render_gif(

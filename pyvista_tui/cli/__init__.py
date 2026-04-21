@@ -12,6 +12,7 @@ from typing import Annotated, Literal
 from cyclopts import App, Group, Parameter
 import pyvista as pv
 from rich.console import Console
+from rich.prompt import Confirm
 
 from pyvista_tui import __version__
 from pyvista_tui.cli._commands import (
@@ -19,6 +20,7 @@ from pyvista_tui.cli._commands import (
     render_compare,
     render_gallery,
     render_gif,
+    render_multi,
     watch_file,
 )
 from pyvista_tui.display import launch_interactive, render_inline
@@ -27,6 +29,8 @@ from pyvista_tui.renderer import CposString, prepare_mesh
 from pyvista_tui.terminal import query_background_color
 from pyvista_tui.tui.boot import boot_sequence
 from pyvista_tui.utils.loader import MeshLoader
+
+MULTI_MESH_PROMPT_THRESHOLD = 6
 
 app = App(
     name='pyvista-tui',
@@ -79,8 +83,8 @@ _THEME_HELP = 'Rendering theme.\n\n' + '\n'.join(
 @app.default
 def main(
     mesh: Annotated[
-        str,
-        Parameter(help='Mesh file readable by pyvista.read().'),
+        list[str],
+        Parameter(help='Mesh file(s) readable by pyvista.read().'),
     ],
     *,
     # Mode
@@ -92,6 +96,14 @@ def main(
         bool,
         Parameter(
             help='Enable debug logging to pyvista-tui.log.',
+            group=_MODE,
+        ),
+    ] = False,
+    yes: Annotated[
+        bool,
+        Parameter(
+            ('-y', '--yes'),
+            help='Skip the confirmation prompt when many meshes are passed.',
             group=_MODE,
         ),
     ] = False,
@@ -208,12 +220,17 @@ def main(
         Parameter(help='Save rendered image as PNG.', group=_OUTPUT),
     ] = False,
     gallery: Annotated[
-        bool,
+        bool | None,
         Parameter(
-            help='Render 6 axis-aligned views as a 2x3 grid.',
+            help=(
+                'Composite into a grid. With one mesh: 6 axis-aligned views '
+                'as a 2x3 grid (default off). With multiple meshes: tile all '
+                'meshes into a grid at a shared camera position (default on; '
+                'pass --no-gallery to render each full-size in sequence).'
+            ),
             group=_OUTPUT,
         ),
-    ] = False,
+    ] = None,
     rotate_gif: Annotated[
         str | None,
         Parameter(
@@ -266,43 +283,111 @@ def main(
             format='%(asctime)s %(name)s %(levelname)s %(message)s',
         )
 
-    # Read mesh data from stdin when mesh is '-'
-    if mesh == '-':
+    # Read mesh data from stdin when a single '-' was passed
+    if len(mesh) == 1 and mesh[0] == '-':
         data = sys.stdin.buffer.read()
         with tempfile.NamedTemporaryFile(suffix='.vtk', delete=False) as tmp:
             tmp.write(data)
-            mesh = tmp.name
-        atexit.register(Path(mesh).unlink, missing_ok=True)
+            mesh[0] = tmp.name
+        atexit.register(Path(mesh[0]).unlink, missing_ok=True)
 
     # Validate mutually exclusive output modes
-    exclusive = [gallery, rotate_gif is not None, compare is not None]
+    exclusive = [gallery is True, rotate_gif is not None, compare is not None]
     if sum(exclusive) > 1:
         msg = '--gallery, --rotate-gif, and --compare are mutually exclusive.'
         raise SystemExit(msg)
 
-    if spin or bounce:
-        interactive = True
+    render_width = width or 1024
+    render_height = height or 576
 
     # Auto-detect terminal background color before Textual takes over stdin
     if background is None:
         background = query_background_color()
+
+    if len(mesh) > 1:
+        _reject_multi_mesh_flags(
+            mesh,
+            interactive=interactive,
+            spin=spin,
+            bounce=bounce,
+            watch=watch,
+            rotate_gif=rotate_gif,
+            compare=compare,
+            pick_scalars=pick_scalars,
+            export_ascii=export_ascii,
+        )
+        if (
+            len(mesh) >= MULTI_MESH_PROMPT_THRESHOLD
+            and not yes
+            and not Confirm.ask(
+                f'About to render {len(mesh)} meshes. Continue?',
+                console=app.console,
+                default=False,
+            )
+        ):
+            msg = 'Cancelled.'
+            raise SystemExit(msg)
+
+        prepared_list = [
+            prepare_mesh(
+                p,
+                theme=theme,
+                center=center,
+                rainbow=rainbow,
+                scalars=scalars,
+                color=color,
+                cmap=cmap,
+                clim=clim,
+                opacity=opacity,
+                show_edges=show_edges,
+                edge_color=edge_color,
+                smooth_shading=smooth_shading,
+                point_size=point_size,
+                line_width=line_width,
+                log_scale=log_scale,
+            )
+            for p in mesh
+        ]
+        if wireframe:
+            for prepared in prepared_list:
+                prepared.wireframe = True
+
+        # Multi-mesh default is the grid; --no-gallery opts out to sequential.
+        use_gallery = True if gallery is None else gallery
+        render_multi(
+            prepared_list,
+            labels=[Path(p).stem for p in mesh],
+            width=render_width,
+            height=render_height,
+            background=background,
+            theme=theme,
+            cpos=cpos,
+            sequential=not use_gallery,
+            save=save,
+        )
+        return
+
+    mesh_path = mesh[0]
+
+    if spin or bounce:
+        interactive = True
 
     # Boot sequence is always shown in interactive mode, opt-in for static
     show_boot = boot or interactive
 
     # Start loading the mesh in a background thread so I/O overlaps
     # with the boot sequence animation
-    loader = MeshLoader(mesh)
+    loader = MeshLoader(mesh_path)
 
     if show_boot and not interactive:
-        boot_sequence(Console(), mesh, loader=loader)
+        boot_sequence(Console(), mesh_path, loader=loader)
 
     if pick_scalars:
         scalars = _pick_scalars(loader, app.console)
 
     # Prepare the mesh with all rendering options in one call
     prepared = prepare_mesh(
-        mesh,
+        mesh_path,
         loader=loader,
         theme=theme,
         center=center,
@@ -324,13 +409,10 @@ def main(
     if wireframe:
         prepared.wireframe = True
 
-    render_width = width or 1024
-    render_height = height or 576
-
     if interactive:
         launch_interactive(
             prepared,
-            mesh_path=mesh,
+            mesh_path=mesh_path,
             width=width,
             height=height,
             background=background,
@@ -344,7 +426,7 @@ def main(
     elif gallery:
         render_gallery(
             prepared,
-            mesh_path=mesh,
+            mesh_path=mesh_path,
             width=render_width,
             height=render_height,
             background=background,
@@ -379,14 +461,14 @@ def main(
             background=background,
             theme=theme,
             export_ascii=export_ascii,
-            save=Path(mesh).stem + '.png' if save else None,
-            filename=Path(mesh).stem + '.png',
+            save=Path(mesh_path).stem + '.png' if save else None,
+            filename=Path(mesh_path).stem + '.png',
             cpos=cpos,
         )
 
         if watch:
             watch_file(
-                mesh,
+                mesh_path,
                 prepared,
                 width=render_width,
                 height=render_height,
@@ -396,3 +478,43 @@ def main(
                 save=save,
                 center=center,
             )
+
+
+def _reject_multi_mesh_flags(
+    mesh_paths: list[str],
+    *,
+    interactive: bool,
+    spin: bool,
+    bounce: bool,
+    watch: bool,
+    rotate_gif: str | None,
+    compare: str | None,
+    pick_scalars: bool,
+    export_ascii: str | None,
+) -> None:
+    """Raise ``SystemExit`` if a flag with no multi-mesh meaning was passed."""
+    unsupported: list[str] = []
+    if interactive:
+        unsupported.append('-i/--interactive')
+    if spin:
+        unsupported.append('--spin')
+    if bounce:
+        unsupported.append('--bounce')
+    if watch:
+        unsupported.append('--watch')
+    if rotate_gif is not None:
+        unsupported.append('--rotate-gif')
+    if compare is not None:
+        unsupported.append('--compare')
+    if pick_scalars:
+        unsupported.append('--pick-scalars')
+    if export_ascii is not None:
+        unsupported.append('--export-ascii')
+    if '-' in mesh_paths:
+        unsupported.append("stdin ('-')")
+    if unsupported:
+        msg = (
+            f'The following options are not supported with multiple meshes: '
+            f'{", ".join(unsupported)}.'
+        )
+        raise SystemExit(msg)

@@ -114,6 +114,33 @@ Render 6 axis-aligned views in a single image:
 pyvista-tui mesh.vtk --gallery --center
 ```
 
+## Multiple Meshes
+
+Pass multiple paths (wildcards work) to tile them into a grid at a shared
+camera position:
+
+```bash
+pyvista-tui *.stl
+pyvista-tui a.vtk b.vtk c.vtk --cpos xz --scalars VonMises --clim 67 250
+```
+
+Add `--no-gallery` to render each mesh full-size one after another instead:
+
+```bash
+pyvista-tui a.vtk b.vtk c.vtk --no-gallery
+```
+
+Shell brace expansion and character classes work well for sampling a range of
+time steps --- e.g. every tenth file between `step_0170` and `step_0230`:
+
+```bash
+# Character classes --- same as step_0{170,180,190,200,210,220,230}.vtu
+pyvista-tui data/step_0{1[789],2[0123]}0.vtu -y
+```
+
+The `-y` flag skips the confirmation prompt that otherwise fires when six or
+more meshes are passed.
+
 ## All CLI Options
 
 ```
@@ -144,7 +171,9 @@ pyvista-tui report
 | `--spin`              |       | Auto-rotate turntable animation              |
 | `--bounce`            |       | DVD screensaver bounce animation             |
 | `--save`              |       | Save rendered image as PNG                   |
-| `--gallery`           |       | Render 6 axis-aligned views as a grid        |
+| `--gallery`           |       | 1 mesh: 6 axis-aligned views; N meshes: grid |
+| `--no-gallery`        |       | With N meshes, render full-size sequentially |
+| `--yes`               | `-y`  | Skip the confirmation prompt for many meshes |
 | `--rotate-gif PATH`   |       | Save 360-degree turntable as animated GIF    |
 | `--compare PATH`      |       | Compare with a second mesh side-by-side      |
 | `--export-ascii PATH` |       | Export ASCII art to text file                |

@@ -46,17 +46,33 @@ ViewAxis = Literal['x', '-x', 'y', '-y', 'z', '-z']
 
 #: Camera-position strings accepted by :attr:`pyvista.Plotter.camera_position`.
 #:
-#: Explicit ``Literal`` kept in sync with
-#: :attr:`pyvista.Renderer.CAMERA_STR_ATTR_MAP` by
+#: Kept in sync with :attr:`pyvista.Renderer.CAMERA_STR_ATTR_MAP` by
 #: ``test_cpos_literal_matches_pyvista``. Defined statically because mypy
 #: cannot handle a ``Literal`` whose arguments are computed at runtime.
 #:
-#: These follow PyVista's convention where the letters name the visible
-#: plane's horizontal and vertical axes — so different strings rotate
-#: the image relative to one another. When you need a consistent
-#: engineering-CAD orientation across side views, use
-#: :meth:`OffScreenRenderer.set_view` with :data:`ViewAxis` instead.
-CposString = Literal['xy', 'yx', 'xz', 'zx', 'yz', 'zy', 'iso']
+#: Includes both plane strings (``'xy'``/``'yx'``/``'xz'``/``'zx'``/``'yz'``/``'zy'``)
+#: and axis strings (``'+x'``/``'-x'``/``'+y'``/``'-y'``/``'+z'``/``'-z'`` plus
+#: the unsigned aliases ``'x'``/``'y'``/``'z'``). The axis strings are a
+#: superset of :data:`ViewAxis` and resolve to the same camera placements as
+#: :meth:`OffScreenRenderer.set_view`.
+CposString = Literal[
+    'xy',
+    'yx',
+    'xz',
+    'zx',
+    'yz',
+    'zy',
+    'iso',
+    '+x',
+    'x',
+    '-x',
+    '+y',
+    'y',
+    '-y',
+    '+z',
+    'z',
+    '-z',
+]
 
 #: Runtime tuple of valid camera-position strings, sourced from PyVista so
 #: the sync test can catch upstream additions.
@@ -793,9 +809,11 @@ class OffScreenRenderer:
         ----------
         cpos : CposString
             Any string accepted by
-            :attr:`pyvista.Plotter.camera_position`: ``'xy'``,
-            ``'yx'``, ``'xz'``, ``'zx'``, ``'yz'``, ``'zy'``, or
-            ``'iso'``.
+            :attr:`pyvista.Plotter.camera_position` — the plane
+            strings ``'xy'``, ``'yx'``, ``'xz'``, ``'zx'``, ``'yz'``,
+            ``'zy'``; ``'iso'``; or the axis strings ``'+x'``,
+            ``'-x'``, ``'+y'``, ``'-y'``, ``'+z'``, ``'-z'`` (and the
+            unsigned aliases ``'x'``, ``'y'``, ``'z'``).
 
         Raises
         ------
