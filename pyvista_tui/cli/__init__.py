@@ -7,6 +7,7 @@ import logging
 from pathlib import Path
 import sys
 import tempfile
+import threading as _threading
 from typing import Annotated, Literal
 
 from cyclopts import App, Group, Parameter
@@ -18,6 +19,48 @@ from pyvista_tui.effects import THEME_REGISTRY
 from pyvista_tui.renderer import CposString, prepare_mesh
 from pyvista_tui.terminal import query_background_color
 from pyvista_tui.utils.loader import MeshLoader
+
+
+def _prewarm_pyvista() -> None:
+    """Start pyvista + pyvista.plotting imports on a background thread.
+
+    ``pyvista.plotting`` contributes ~300 ms of import cost that
+    otherwise sits on the main thread's critical path inside
+    :meth:`OffScreenRenderer.__init__`.  Running it concurrently with
+    cold-start cli imports + cyclopts parsing hides most of it behind
+    work the main thread has to do anyway.  Best-effort -- if pyvista
+    is missing, we let the main-thread path raise as usual.
+    """
+    try:
+        import pyvista  # noqa: F401, PLC0415
+        from pyvista.plotting.themes import DarkTheme  # noqa: F401, PLC0415
+    except ImportError:  # pragma: no cover
+        pass
+
+
+def _should_prewarm(argv: list[str]) -> bool:
+    """Return whether this invocation is likely to hit the render pipeline.
+
+    We only fire the pre-warm thread when we are going to render: the
+    VTK shared libraries it loads cannot be interrupted mid-import, and
+    a daemon thread stuck in ``libvtk`` forces the interpreter to wait
+    at shutdown -- which adds ~300 ms to ``pvtui --help``.
+    """
+    if len(argv) <= 1:
+        return False
+    rest = argv[1:]
+    if any(a in {'-h', '--help', '--version'} for a in rest):
+        return False
+    # ``report`` is the one subcommand that needs pyvista, but it is
+    # invoked rarely so hitting cold on it is acceptable.
+    return rest[0] != 'report'
+
+
+# Kick off the pre-warm thread at cli-module load time when we think we
+# will need pyvista.  ``daemon=True`` lets the interpreter exit even if
+# the thread is still running.
+if _should_prewarm(sys.argv):
+    _threading.Thread(target=_prewarm_pyvista, daemon=True).start()
 
 # NOTE: every PLC0415-suppressed import in this module is an intentional
 # startup-latency deferral.  ``pyvista``, ``rich.prompt.Confirm``,

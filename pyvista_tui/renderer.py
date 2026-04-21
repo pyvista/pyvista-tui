@@ -14,6 +14,7 @@ from pyvista_tui.utils.loader import MeshLoader
 
 if TYPE_CHECKING:
     from pyvista import Camera, DataSet, MultiBlock
+    from pyvista.plotting.themes import Theme as _PvTheme
 
 
 MAX_ELEVATION = math.pi / 2 - 0.008  # ~89.5 degrees, prevents pole-crossing
@@ -582,16 +583,24 @@ class OffScreenRenderer:
         mesh_kwargs: dict[str, object] | None = None,
         cpos: CposString | None = None,
     ) -> None:
-        # pyvista + TerminalTheme imports stay lazy so this module loads
+        # pyvista + theme imports stay lazy so this module loads
         # cheaply during CLI argument parsing (see STARTUP_PROFILE.md).
+        # ``pv.themes`` is not populated until something explicitly
+        # imports ``pyvista.plotting.themes`` -- the pre-warm thread
+        # normally does that, but we cannot rely on it on the gif,
+        # compare, and multi-mesh paths, so we import DarkTheme
+        # directly.
         import pyvista as pv  # noqa: PLC0415
 
+        theme: _PvTheme
         if use_terminal_theme:
             from pyvista_tui.theme import TerminalTheme  # noqa: PLC0415
 
             theme = TerminalTheme()
         else:
-            theme = pv.themes.DarkTheme()
+            from pyvista.plotting.themes import DarkTheme  # noqa: PLC0415
+
+            theme = DarkTheme()
         self._plotter = pv.Plotter(
             off_screen=True,
             window_size=list(window_size),
