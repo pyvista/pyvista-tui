@@ -1,10 +1,10 @@
 [build-system]
 build-backend = 'setuptools.build_meta'
-requires = ['setuptools>=77.0']
+requires = ['setuptools>=77.0', 'setuptools_scm>=8']
 
 [project]
 name = 'pyvista-tui'
-version = '0.1.4'
+dynamic = ['version']
 description = 'Interactive 3D mesh visualization in the terminal using PyVista.'
 readme = 'README.md'
 license = 'MIT'
@@ -170,3 +170,7 @@ pyvista_tui = ['py.typed']
 [tool.setuptools.packages.find]
 where = ['.']
 include = ['pyvista_tui*']
+
+[tool.setuptools_scm]
+write_to = 'pyvista_tui/_version.py'
+version_scheme = 'release-branch-semver'

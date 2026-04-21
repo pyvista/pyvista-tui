@@ -10,8 +10,13 @@ from pyvista_tui.renderer import OffScreenRenderer
 
 try:
     __version__: str = version('pyvista-tui')
-except PackageNotFoundError:
-    __version__ = '0.0.0'
+except PackageNotFoundError:  # pragma: no cover
+    try:
+        # Written by setuptools_scm at build time; may be absent in editable
+        # installs or a fresh checkout without a built distribution.
+        from pyvista_tui._version import __version__  # type: ignore[no-redef]
+    except ImportError:
+        __version__ = '0.0.0'
 
 
 def __getattr__(name: str):

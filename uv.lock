@@ -1524,7 +1524,6 @@ wheels = [
 
 [[package]]
 name = "pyvista-tui"
-version = "0.1.4"
 source = { editable = "." }
 dependencies = [
     { name = "cyclopts" },
