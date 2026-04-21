@@ -2,28 +2,54 @@
 
 from __future__ import annotations
 
-from importlib.metadata import PackageNotFoundError, version
+from typing import TYPE_CHECKING, Any
 
-from pyvista_tui._plot import plot
-from pyvista_tui.effects import Theme
-from pyvista_tui.renderer import OffScreenRenderer
+# Public attributes are resolved on first access via ``__getattr__`` so
+# ``import pyvista_tui`` stays cheap (~1 ms).  Eagerly importing
+# ``OffScreenRenderer`` / ``plot`` pulls the full ``pyvista.plotting``
+# tree at package-import time and adds ~440 ms to every ``pvtui --help``.
+# See ``profiling/STARTUP_PROFILE.md``.
 
-try:
-    __version__: str = version('pyvista-tui')
-except PackageNotFoundError:  # pragma: no cover
-    try:
-        # Written by setuptools_scm at build time; may be absent in editable
-        # installs or a fresh checkout without a built distribution.
-        from pyvista_tui._version import __version__  # type: ignore[no-redef]
-    except ImportError:
-        __version__ = '0.0.0'
+if TYPE_CHECKING:
+    # Exposed for static analysis; at runtime ``__getattr__`` resolves
+    # these lazily to keep import cost off the ``pvtui --help`` path.
+    from pyvista_tui._plot import plot as plot
+    from pyvista_tui.effects import Theme as Theme
+    from pyvista_tui.renderer import OffScreenRenderer as OffScreenRenderer
+    from pyvista_tui.tui import TuiApp as TuiApp
+
+    __version__: str
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
     if name == 'TuiApp':
         from pyvista_tui.tui import TuiApp  # noqa: PLC0415
 
         return TuiApp
+    if name == 'plot':
+        from pyvista_tui._plot import plot  # noqa: PLC0415
+
+        return plot
+    if name == 'Theme':
+        from pyvista_tui.effects import Theme  # noqa: PLC0415
+
+        return Theme
+    if name == 'OffScreenRenderer':
+        from pyvista_tui.renderer import OffScreenRenderer  # noqa: PLC0415
+
+        return OffScreenRenderer
+    if name == '__version__':
+        from importlib.metadata import PackageNotFoundError, version  # noqa: PLC0415
+
+        try:
+            return version('pyvista-tui')
+        except PackageNotFoundError:  # pragma: no cover
+            try:
+                from pyvista_tui._version import __version__  # noqa: PLC0415
+
+                return __version__
+            except ImportError:
+                return '0.0.0'
     msg = f'module {__name__!r} has no attribute {name!r}'
     raise AttributeError(msg)
 

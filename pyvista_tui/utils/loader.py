@@ -6,8 +6,6 @@ import sys
 import threading
 from typing import TYPE_CHECKING
 
-import pyvista as pv
-
 if TYPE_CHECKING:
     from types import TracebackType
 
@@ -48,7 +46,19 @@ class MeshLoader:
 
     def _load(self) -> None:
         """Load the mesh in the background."""
+        # pyvista is imported on this thread so the read can start
+        # before the main thread reaches ``prepare_mesh`` — see
+        # ``profiling/STARTUP_PROFILE.md``.
+        import pyvista as pv  # noqa: PLC0415
+
+        # Any exception ``pv.read`` raises -- VTK I/O errors, path
+        # issues, malformed data -- is captured here and re-raised
+        # from ``result()`` on the consumer thread so the caller sees
+        # the original traceback.
         try:
+            # pyvista's stub types ``read`` as returning ``DataSet``
+            # while at runtime it can also return ``MultiBlock``; mypy
+            # flags the assignment to ``DataSet | None`` as a mismatch.
             self._mesh = pv.read(self._path)  # type: ignore[arg-type,assignment]
         except Exception as exc:
             self._error = exc

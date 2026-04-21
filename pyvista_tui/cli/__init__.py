@@ -10,25 +10,21 @@ import tempfile
 from typing import Annotated, Literal
 
 from cyclopts import App, Group, Parameter
-import pyvista as pv
 from rich.console import Console
-from rich.prompt import Confirm
 
 from pyvista_tui import __version__
-from pyvista_tui.cli._commands import (
-    pick_scalars as _pick_scalars,
-    render_compare,
-    render_gallery,
-    render_gif,
-    render_multi,
-    watch_file,
-)
 from pyvista_tui.display import launch_interactive, render_inline
 from pyvista_tui.effects import THEME_REGISTRY
 from pyvista_tui.renderer import CposString, prepare_mesh
 from pyvista_tui.terminal import query_background_color
-from pyvista_tui.tui.boot import boot_sequence
 from pyvista_tui.utils.loader import MeshLoader
+
+# NOTE: every PLC0415-suppressed import in this module is an intentional
+# startup-latency deferral.  ``pyvista``, ``rich.prompt.Confirm``,
+# ``pyvista_tui.tui.boot`` and the ``_commands`` helpers are only used
+# by specific CLI branches; importing them at module top forces
+# ~440 ms of eager loading on every invocation -- including
+# ``pvtui --help`` and ``--version``.  See ``profiling/STARTUP_PROFILE.md``.
 
 MULTI_MESH_PROMPT_THRESHOLD = 6
 
@@ -43,6 +39,8 @@ app = App(
 
 @app.command(name='report', help='Print full PyVista system report and exit.')
 def _report() -> None:
+    import pyvista as pv  # noqa: PLC0415
+
     extra: list[str] = [
         'textual',
         'textual_image',
@@ -316,17 +314,16 @@ def main(
             pick_scalars=pick_scalars,
             export_ascii=export_ascii,
         )
-        if (
-            len(mesh) >= MULTI_MESH_PROMPT_THRESHOLD
-            and not yes
-            and not Confirm.ask(
+        if len(mesh) >= MULTI_MESH_PROMPT_THRESHOLD and not yes:
+            from rich.prompt import Confirm  # noqa: PLC0415
+
+            if not Confirm.ask(
                 f'About to render {len(mesh)} meshes. Continue?',
                 console=app.console,
                 default=False,
-            )
-        ):
-            msg = 'Cancelled.'
-            raise SystemExit(msg)
+            ):
+                msg = 'Cancelled.'
+                raise SystemExit(msg)
 
         prepared_list = [
             prepare_mesh(
@@ -354,6 +351,8 @@ def main(
 
         # Multi-mesh default is the grid; --no-gallery opts out to sequential.
         use_gallery = True if gallery is None else gallery
+        from pyvista_tui.cli._commands import render_multi  # noqa: PLC0415
+
         render_multi(
             prepared_list,
             labels=[Path(p).stem for p in mesh],
@@ -380,9 +379,13 @@ def main(
     loader = MeshLoader(mesh_path)
 
     if show_boot and not interactive:
+        from pyvista_tui.tui.boot import boot_sequence  # noqa: PLC0415
+
         boot_sequence(Console(), mesh_path, loader=loader)
 
     if pick_scalars:
+        from pyvista_tui.cli._commands import pick_scalars as _pick_scalars  # noqa: PLC0415
+
         scalars = _pick_scalars(loader, app.console)
 
     # Prepare the mesh with all rendering options in one call
@@ -424,6 +427,8 @@ def main(
             cpos=cpos,
         )
     elif gallery:
+        from pyvista_tui.cli._commands import render_gallery  # noqa: PLC0415
+
         render_gallery(
             prepared,
             mesh_path=mesh_path,
@@ -435,6 +440,8 @@ def main(
             export_ascii=export_ascii,
         )
     elif rotate_gif is not None:
+        from pyvista_tui.cli._commands import render_gif  # noqa: PLC0415
+
         render_gif(
             prepared,
             output_path=rotate_gif,
@@ -443,6 +450,8 @@ def main(
             background=background,
         )
     elif compare is not None:
+        from pyvista_tui.cli._commands import render_compare  # noqa: PLC0415
+
         render_compare(
             prepared,
             compare_path=compare,
@@ -467,6 +476,8 @@ def main(
         )
 
         if watch:
+            from pyvista_tui.cli._commands import watch_file  # noqa: PLC0415
+
             watch_file(
                 mesh_path,
                 prepared,

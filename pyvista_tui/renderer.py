@@ -4,19 +4,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, get_args
 
 import numpy as np
 from PIL import Image
-import pyvista as pv
 
 from pyvista_tui.effects import THEME_REGISTRY
-from pyvista_tui.theme import TerminalTheme
+from pyvista_tui.utils.loader import MeshLoader
 
 if TYPE_CHECKING:
     from pyvista import Camera, DataSet, MultiBlock
-
-    from pyvista_tui.utils.loader import MeshLoader
 
 
 MAX_ELEVATION = math.pi / 2 - 0.008  # ~89.5 degrees, prevents pole-crossing
@@ -58,9 +55,11 @@ ViewAxis = Literal['x', '-x', 'y', '-y', 'z', '-z']
 #: :meth:`OffScreenRenderer.set_view` with :data:`ViewAxis` instead.
 CposString = Literal['xy', 'yx', 'xz', 'zx', 'yz', 'zy', 'iso']
 
-#: Runtime tuple of valid camera-position strings, sourced from PyVista so
-#: the sync test can catch upstream additions.
-CPOS_STRINGS: tuple[str, ...] = tuple(pv.Renderer.CAMERA_STR_ATTR_MAP)
+#: Runtime tuple of valid camera-position strings, derived statically from
+#: :data:`CposString` so this module does not need to import :mod:`pyvista`
+#: at load time.  ``test_cpos_literal_matches_pyvista`` cross-checks the
+#: Literal against the runtime set exposed by pyvista.
+CPOS_STRINGS: tuple[str, ...] = get_args(CposString)
 
 
 def _rotate_turntable(camera: Camera, d_azimuth: float, d_elevation: float) -> None:
@@ -262,6 +261,55 @@ def apply_rainbow(mesh_kwargs: dict[str, object]) -> dict[str, object]:
     return mesh_kwargs
 
 
+def _apply_mesh_post_processing(
+    result: DataSet | MultiBlock,
+    *,
+    center: bool,
+    rainbow: bool,
+) -> DataSet | MultiBlock:
+    """Apply center/rainbow transformations.  MultiBlock is passed through."""
+    # pyvista is deferred so ``import pyvista_tui.renderer`` stays cheap
+    # on the ``pvtui --help`` path.
+    import pyvista as pv  # noqa: PLC0415
+
+    if isinstance(result, pv.MultiBlock):
+        return result
+    if center:
+        result = result.copy()  # type: ignore[assignment]
+        result.points -= result.center  # type: ignore[misc]
+    if rainbow:
+        result['_rainbow'] = result.points[:, 2]
+    return result
+
+
+class _DeferredMesh:
+    """Wrap a :class:`MeshLoader` with deferred center/rainbow processing.
+
+    Exposes the same ``.result()`` interface as
+    :class:`~pyvista_tui.utils.loader.MeshLoader` so
+    :class:`OffScreenRenderer` can resolve either at add-mesh time.
+    Keeping the post-processing out of :func:`prepare_mesh` preserves
+    the overlap between ``pv.read`` (background thread) and
+    ``plotter.show()`` (main thread).
+    """
+
+    __slots__ = ('_center', '_loader', '_rainbow')
+
+    def __init__(self, loader: MeshLoader, *, center: bool, rainbow: bool) -> None:
+        self._loader = loader
+        self._center = center
+        self._rainbow = rainbow
+
+    def result(self) -> DataSet | MultiBlock:
+        """Block on the loader, then apply center/rainbow post-processing."""
+        mesh = self._loader.result()
+        return _apply_mesh_post_processing(
+            mesh,
+            center=self._center,
+            rainbow=self._rainbow,
+        )
+
+
 def resolve_mesh(
     mesh_path: str = '',
     *,
@@ -274,7 +322,9 @@ def resolve_mesh(
 
     Resolves the mesh from one of three sources (in-memory object,
     background loader, or file path), then optionally centers it and
-    adds rainbow Z-coordinate scalars.
+    adds rainbow Z-coordinate scalars.  Always returns a fully resolved
+    mesh — for the deferred-resolve variant used by
+    :func:`prepare_mesh`, see :class:`_DeferredMesh`.
 
     Parameters
     ----------
@@ -300,6 +350,8 @@ def resolve_mesh(
         The prepared mesh, ready for rendering.
 
     """
+    import pyvista as pv  # noqa: PLC0415
+
     result: DataSet | MultiBlock
     if mesh is not None:
         result = mesh
@@ -308,16 +360,7 @@ def resolve_mesh(
     else:
         result = pv.read(mesh_path)  # type: ignore[assignment]
 
-    # Center and rainbow require point-level access (DataSet only)
-    if not isinstance(result, pv.MultiBlock):
-        if center:
-            result = result.copy()  # type: ignore[assignment]
-            result.points -= result.center  # type: ignore[misc]
-
-        if rainbow:
-            result['_rainbow'] = result.points[:, 2]
-
-    return result
+    return _apply_mesh_post_processing(result, center=center, rainbow=rainbow)
 
 
 @dataclass(slots=True)
@@ -326,8 +369,13 @@ class PreparedMesh:
 
     Parameters
     ----------
-    mesh : pyvista.DataSet
-        The prepared mesh (centered, with rainbow scalars if requested).
+    mesh : pyvista.DataSet, pyvista.MultiBlock, MeshLoader, or _DeferredMesh
+        The prepared mesh.  When :func:`prepare_mesh` is called with a
+        :class:`~pyvista_tui.utils.loader.MeshLoader`, this field may
+        hold the loader itself (or a :class:`_DeferredMesh` wrapping
+        it) instead of a resolved dataset, so that
+        :class:`OffScreenRenderer` can block on ``loader.result()`` in
+        parallel with the VTK OpenGL context init.
 
     mesh_kwargs : dict[str, object]
         Keyword arguments for :func:`pyvista.Plotter.add_mesh`.
@@ -340,7 +388,7 @@ class PreparedMesh:
 
     """
 
-    mesh: DataSet | MultiBlock
+    mesh: DataSet | MultiBlock | MeshLoader | _DeferredMesh
     mesh_kwargs: dict[str, object]
     wireframe: bool
     use_terminal_theme: bool
@@ -448,13 +496,22 @@ def prepare_mesh(
 
     info = THEME_REGISTRY[theme]
 
+    mesh: DataSet | MultiBlock | MeshLoader | _DeferredMesh
     if isinstance(mesh_or_path, str):
-        mesh = resolve_mesh(
-            mesh_or_path,
-            loader=loader,
-            center=center,
-            rainbow=rainbow,
-        )
+        if loader is not None:
+            # Defer the join so pv.read can overlap with plotter.show()
+            # inside OffScreenRenderer.  No resolution happens here.
+            mesh = (
+                _DeferredMesh(loader, center=center, rainbow=rainbow)
+                if (center or rainbow)
+                else loader
+            )
+        else:
+            mesh = resolve_mesh(
+                mesh_or_path,
+                center=center,
+                rainbow=rainbow,
+            )
     else:
         mesh = resolve_mesh(
             mesh=mesh_or_path,
@@ -479,9 +536,16 @@ class OffScreenRenderer:
 
     Parameters
     ----------
-    mesh : pyvista.DataSet
-        The mesh to render.  Use :func:`resolve_mesh` to load and
-        prepare the mesh before constructing the renderer.
+    mesh : pyvista.DataSet, pyvista.MultiBlock, or MeshLoader
+        The mesh to render, or a
+        :class:`~pyvista_tui.utils.loader.MeshLoader` that will produce
+        it.  Passing a loader lets VTK's off-screen OpenGL context
+        initialize in parallel with file I/O on the loader's
+        background thread — the constructor calls ``plotter.show()``
+        first (which creates the GL context) and only blocks on
+        ``loader.result()`` immediately before ``add_mesh``.  A
+        private ``_DeferredMesh`` wrapper produced by
+        :func:`prepare_mesh` is also accepted and behaves identically.
 
     window_size : tuple[int, int], default: (800, 600)
         Render resolution in pixels ``(width, height)``.
@@ -509,7 +573,7 @@ class OffScreenRenderer:
 
     def __init__(
         self,
-        mesh: DataSet | MultiBlock,
+        mesh: DataSet | MultiBlock | MeshLoader | _DeferredMesh,
         window_size: tuple[int, int] = (800, 600),
         *,
         wireframe: bool = False,
@@ -518,7 +582,16 @@ class OffScreenRenderer:
         mesh_kwargs: dict[str, object] | None = None,
         cpos: CposString | None = None,
     ) -> None:
-        theme = TerminalTheme() if use_terminal_theme else pv.themes.DarkTheme()
+        # pyvista + TerminalTheme imports stay lazy so this module loads
+        # cheaply during CLI argument parsing (see STARTUP_PROFILE.md).
+        import pyvista as pv  # noqa: PLC0415
+
+        if use_terminal_theme:
+            from pyvista_tui.theme import TerminalTheme  # noqa: PLC0415
+
+            theme = TerminalTheme()
+        else:
+            theme = pv.themes.DarkTheme()
         self._plotter = pv.Plotter(
             off_screen=True,
             window_size=list(window_size),
@@ -539,7 +612,18 @@ class OffScreenRenderer:
             self._plotter.set_background([0, 0, 0, 0])  # type: ignore[arg-type]
             self._transparent = True
 
-        is_multiblock = isinstance(mesh, pv.MultiBlock)
+        # Kick off GL context creation now, with no actors yet — this
+        # overlaps the ~120-185 ms first-render cost with any pv.read
+        # still running on the loader's thread.
+        self._plotter.show(auto_close=False)
+
+        # Block on the loader now that the GL context is up; for a
+        # pre-resolved mesh this branch is skipped entirely.
+        resolved: DataSet | MultiBlock = (
+            mesh.result() if isinstance(mesh, MeshLoader | _DeferredMesh) else mesh
+        )
+
+        is_multiblock = isinstance(resolved, pv.MultiBlock)
 
         kwargs = dict(mesh_kwargs) if mesh_kwargs else {}
         kwargs.setdefault('show_scalar_bar', False)
@@ -552,7 +636,7 @@ class OffScreenRenderer:
             # Validate scalars if specified (not applicable to MultiBlock)
             scalars = kwargs.get('scalars')
             if scalars is not None:
-                all_names = [*mesh.point_data.keys(), *mesh.cell_data.keys()]
+                all_names = [*resolved.point_data.keys(), *resolved.cell_data.keys()]
                 if scalars not in all_names:
                     msg = (
                         f'Scalars {scalars!r} not found. '
@@ -560,8 +644,11 @@ class OffScreenRenderer:
                     )
                     raise ValueError(msg)
 
-        self._actor = self._plotter.add_mesh(mesh, **kwargs)  # type: ignore[arg-type]
-        self._mesh: DataSet | MultiBlock = mesh
+        # ``add_mesh`` after ``show()`` auto-promotes ``reset_camera=True``
+        # via ``plotter.py:_first_time`` handling, which is exactly the
+        # mesh-fit we want.  cpos is applied below so it overrides.
+        self._actor = self._plotter.add_mesh(resolved, **kwargs)  # type: ignore[arg-type]
+        self._mesh: DataSet | MultiBlock = resolved
         self._wireframe = wireframe
         self._show_edges = False
 
@@ -572,13 +659,10 @@ class OffScreenRenderer:
         if not is_multiblock:
             self._scalars_names = [
                 name
-                for name in [*mesh.point_data.keys(), *mesh.cell_data.keys()]
-                if mesh[name].ndim == 1
+                for name in [*resolved.point_data.keys(), *resolved.cell_data.keys()]
+                if resolved[name].ndim == 1
             ]
         self._scalars_index: int = -1
-
-        # Initialize the render window (creates OpenGL context)
-        self._plotter.show(auto_close=False)
 
         self._dirty = True
         self._last_frame: Image.Image | None = None
@@ -831,6 +915,8 @@ class OffScreenRenderer:
             Summary with point count, cell count, and array count.
 
         """
+        import pyvista as pv  # noqa: PLC0415
+
         m = self._mesh
         if isinstance(m, pv.MultiBlock):
             return f'blocks:{m.n_blocks} datasets:{len(m.keys())}'
