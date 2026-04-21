@@ -22,6 +22,7 @@ __all__ = ['display_frame', 'launch_interactive', 'render_inline']
 
 if TYPE_CHECKING:
     from PIL import Image as PILImage
+    from pyvista import DataSet, MultiBlock
 
     from pyvista_tui.renderer import CposString, PreparedMesh
     from pyvista_tui.utils.loader import MeshLoader
@@ -237,16 +238,27 @@ def launch_interactive(
         the accepted values.
 
     """
+    from pyvista_tui.renderer import _DeferredMesh  # noqa: PLC0415
     from pyvista_tui.tui import TuiApp  # noqa: PLC0415
+    from pyvista_tui.utils.loader import MeshLoader  # noqa: PLC0415
 
     if width is None or height is None:
         term_w, term_h = get_terminal_render_size()
         width = width or term_w
         height = height or term_h
 
+    # In interactive mode the boot-screen animation already provides
+    # the pv.read / GL-setup overlap window, so resolve the mesh here
+    # rather than threading a loader through the Textual screen stack.
+    resolved_mesh: DataSet | MultiBlock | None
+    if isinstance(prepared.mesh, MeshLoader | _DeferredMesh):
+        resolved_mesh = prepared.mesh.result()
+    else:
+        resolved_mesh = prepared.mesh
+
     tui = TuiApp(
         mesh_path,
-        mesh=prepared.mesh,
+        mesh=resolved_mesh,
         interactive=True,
         window_size=(width, height),
         wireframe=prepared.wireframe,
