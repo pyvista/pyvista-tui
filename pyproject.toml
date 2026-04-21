@@ -78,6 +78,7 @@ xfail_strict = true
 [tool.ruff]
 line-length = 99
 src = ['.']
+extend-exclude = ['pyvista_tui/_version.py']
 
 [tool.ruff.format]
 docstring-code-format = true
