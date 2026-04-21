@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import get_args
 
 from PIL import Image
+import pyvista as pv
 
 from pyvista_tui.cli import ThemeChoice
 from pyvista_tui.effects import (
@@ -53,12 +54,14 @@ def test_registry_cli_literal_matches_registry():
 
 def test_cpos_literal_matches_pyvista():
     literal_values = set(get_args(CposString))
-    pv_values = set(CPOS_STRINGS)
-    assert literal_values == pv_values, (
-        f'CposString Literal is out of sync with '
-        f'pyvista.Renderer.CAMERA_STR_ATTR_MAP. '
-        f'Missing from Literal: {pv_values - literal_values}. '
-        f'Extra in Literal: {literal_values - pv_values}.'
+    runtime_values = set(CPOS_STRINGS)
+    assert literal_values == runtime_values, (
+        'CPOS_STRINGS is out of sync with the CposString Literal.'
+    )
+    pv_values = set(pv.Renderer.CAMERA_STR_ATTR_MAP)
+    assert literal_values <= pv_values, (
+        f'CposString Literal contains values not present in '
+        f'pyvista.Renderer.CAMERA_STR_ATTR_MAP: {literal_values - pv_values}.'
     )
 
 

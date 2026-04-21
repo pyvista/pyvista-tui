@@ -7,28 +7,67 @@ import logging
 from pathlib import Path
 import sys
 import tempfile
+import threading as _threading
 from typing import Annotated, Literal
 
 from cyclopts import App, Group, Parameter
-import pyvista as pv
 from rich.console import Console
-from rich.prompt import Confirm
 
 from pyvista_tui import __version__
-from pyvista_tui.cli._commands import (
-    pick_scalars as _pick_scalars,
-    render_compare,
-    render_gallery,
-    render_gif,
-    render_multi,
-    watch_file,
-)
 from pyvista_tui.display import launch_interactive, render_inline
 from pyvista_tui.effects import THEME_REGISTRY
 from pyvista_tui.renderer import CposString, prepare_mesh
 from pyvista_tui.terminal import query_background_color
-from pyvista_tui.tui.boot import boot_sequence
 from pyvista_tui.utils.loader import MeshLoader
+
+
+def _prewarm_pyvista() -> None:
+    """Start pyvista + pyvista.plotting imports on a background thread.
+
+    ``pyvista.plotting`` contributes ~300 ms of import cost that
+    otherwise sits on the main thread's critical path inside
+    :meth:`OffScreenRenderer.__init__`.  Running it concurrently with
+    cold-start cli imports + cyclopts parsing hides most of it behind
+    work the main thread has to do anyway.  Best-effort -- if pyvista
+    is missing, we let the main-thread path raise as usual.
+    """
+    try:
+        import pyvista  # noqa: F401, PLC0415
+        from pyvista.plotting.themes import DarkTheme  # noqa: F401, PLC0415
+    except ImportError:  # pragma: no cover
+        pass
+
+
+def _should_prewarm(argv: list[str]) -> bool:
+    """Return whether this invocation is likely to hit the render pipeline.
+
+    We only fire the pre-warm thread when we are going to render: the
+    VTK shared libraries it loads cannot be interrupted mid-import, and
+    a daemon thread stuck in ``libvtk`` forces the interpreter to wait
+    at shutdown -- which adds ~300 ms to ``pvtui --help``.
+    """
+    if len(argv) <= 1:
+        return False
+    rest = argv[1:]
+    if any(a in {'-h', '--help', '--version'} for a in rest):
+        return False
+    # ``report`` is the one subcommand that needs pyvista, but it is
+    # invoked rarely so hitting cold on it is acceptable.
+    return rest[0] != 'report'
+
+
+# Kick off the pre-warm thread at cli-module load time when we think we
+# will need pyvista.  ``daemon=True`` lets the interpreter exit even if
+# the thread is still running.
+if _should_prewarm(sys.argv):
+    _threading.Thread(target=_prewarm_pyvista, daemon=True).start()
+
+# NOTE: every PLC0415-suppressed import in this module is an intentional
+# startup-latency deferral.  ``pyvista``, ``rich.prompt.Confirm``,
+# ``pyvista_tui.tui.boot`` and the ``_commands`` helpers are only used
+# by specific CLI branches; importing them at module top forces
+# ~440 ms of eager loading on every invocation -- including
+# ``pvtui --help`` and ``--version``.  See ``profiling/STARTUP_PROFILE.md``.
 
 MULTI_MESH_PROMPT_THRESHOLD = 6
 
@@ -43,6 +82,8 @@ app = App(
 
 @app.command(name='report', help='Print full PyVista system report and exit.')
 def _report() -> None:
+    import pyvista as pv  # noqa: PLC0415
+
     extra: list[str] = [
         'textual',
         'textual_image',
@@ -316,17 +357,16 @@ def main(
             pick_scalars=pick_scalars,
             export_ascii=export_ascii,
         )
-        if (
-            len(mesh) >= MULTI_MESH_PROMPT_THRESHOLD
-            and not yes
-            and not Confirm.ask(
+        if len(mesh) >= MULTI_MESH_PROMPT_THRESHOLD and not yes:
+            from rich.prompt import Confirm  # noqa: PLC0415
+
+            if not Confirm.ask(
                 f'About to render {len(mesh)} meshes. Continue?',
                 console=app.console,
                 default=False,
-            )
-        ):
-            msg = 'Cancelled.'
-            raise SystemExit(msg)
+            ):
+                msg = 'Cancelled.'
+                raise SystemExit(msg)
 
         prepared_list = [
             prepare_mesh(
@@ -354,6 +394,8 @@ def main(
 
         # Multi-mesh default is the grid; --no-gallery opts out to sequential.
         use_gallery = True if gallery is None else gallery
+        from pyvista_tui.cli._commands import render_multi  # noqa: PLC0415
+
         render_multi(
             prepared_list,
             labels=[Path(p).stem for p in mesh],
@@ -380,9 +422,13 @@ def main(
     loader = MeshLoader(mesh_path)
 
     if show_boot and not interactive:
+        from pyvista_tui.tui.boot import boot_sequence  # noqa: PLC0415
+
         boot_sequence(Console(), mesh_path, loader=loader)
 
     if pick_scalars:
+        from pyvista_tui.cli._commands import pick_scalars as _pick_scalars  # noqa: PLC0415
+
         scalars = _pick_scalars(loader, app.console)
 
     # Prepare the mesh with all rendering options in one call
@@ -424,6 +470,8 @@ def main(
             cpos=cpos,
         )
     elif gallery:
+        from pyvista_tui.cli._commands import render_gallery  # noqa: PLC0415
+
         render_gallery(
             prepared,
             mesh_path=mesh_path,
@@ -435,6 +483,8 @@ def main(
             export_ascii=export_ascii,
         )
     elif rotate_gif is not None:
+        from pyvista_tui.cli._commands import render_gif  # noqa: PLC0415
+
         render_gif(
             prepared,
             output_path=rotate_gif,
@@ -443,6 +493,8 @@ def main(
             background=background,
         )
     elif compare is not None:
+        from pyvista_tui.cli._commands import render_compare  # noqa: PLC0415
+
         render_compare(
             prepared,
             compare_path=compare,
@@ -467,6 +519,8 @@ def main(
         )
 
         if watch:
+            from pyvista_tui.cli._commands import watch_file  # noqa: PLC0415
+
             watch_file(
                 mesh_path,
                 prepared,
