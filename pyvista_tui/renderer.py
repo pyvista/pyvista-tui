@@ -653,10 +653,13 @@ class OffScreenRenderer:
                     )
                     raise ValueError(msg)
 
-        # ``add_mesh`` after ``show()`` auto-promotes ``reset_camera=True``
-        # via ``plotter.py:_first_time`` handling, which is exactly the
-        # mesh-fit we want.  cpos is applied below so it overrides.
-        self._actor = self._plotter.add_mesh(resolved, **kwargs)  # type: ignore[arg-type]
+        # ``show()`` ran on an empty scene to overlap GL init with I/O,
+        # which consumes the plotter's "first time" flag -- so
+        # ``add_mesh`` will NOT auto-reset the camera here.  Reset it
+        # explicitly (``cpos`` below overrides).  Without this the
+        # camera stays at VTK's default ``(1, 1, 1)`` looking at the
+        # origin and the mesh renders outside the view frustum.
+        self._actor = self._plotter.add_mesh(resolved, reset_camera=True, **kwargs)  # type: ignore[arg-type]
         self._mesh: DataSet | MultiBlock = resolved
         self._wireframe = wireframe
         self._show_edges = False

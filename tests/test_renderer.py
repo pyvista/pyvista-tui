@@ -3,10 +3,23 @@ from __future__ import annotations
 import math
 from pathlib import Path
 
+import numpy as np
 from PIL import Image
 import pyvista as pv
 
 from pyvista_tui.renderer import OffScreenRenderer
+
+
+def _rendered_mesh_is_visible(frame: Image.Image) -> bool:
+    """Return True if the rendered frame actually shows a mesh.
+
+    A blank/solid-colour frame (e.g. camera pointing outside the view
+    frustum, so only the background is drawn) has ~1 unique colour.
+    A frame with a lit mesh has many unique colours from shading.
+    """
+    arr = np.array(frame)
+    unique = np.unique(arr.reshape(-1, arr.shape[-1]), axis=0)
+    return len(unique) > 5
 
 
 def test_render_frame_returns_pil_image(renderer):
@@ -17,6 +30,28 @@ def test_render_frame_returns_pil_image(renderer):
 def test_render_frame_dimensions(renderer):
     frame = renderer.render_frame()
     assert frame.size == (200, 150)
+
+
+def test_render_frame_shows_mesh(renderer):
+    """Regression: camera must fit the mesh so pixels aren't all one colour."""
+    frame = renderer.render_frame()
+    assert _rendered_mesh_is_visible(frame)
+
+
+def test_render_frame_shows_mesh_with_large_bounds(tmp_path):
+    """Regression for mesh bounds far from VTK's default camera (1, 1, 1).
+
+    A mesh with bounds in the thousands used to render as a single
+    background colour because ``show()`` was called before
+    ``add_mesh()``, consuming the plotter's first-time reset.
+    """
+    mesh = pv.Sphere(radius=1000.0, center=(5000.0, 5000.0, 5000.0))
+    r = OffScreenRenderer(mesh, window_size=(100, 100))
+    try:
+        frame = r.render_frame()
+        assert _rendered_mesh_is_visible(frame)
+    finally:
+        r.close()
 
 
 def test_dirty_flag_after_render(renderer):
