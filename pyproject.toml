@@ -48,6 +48,11 @@ dev = [
 pyvista-tui = 'pyvista_tui.cli:app'
 pvtui = 'pyvista_tui.cli:app'
 
+[project.entry-points.'pyvista.accessors']
+# Value points at the plugin module; importing it runs the
+# ``@register_dataset_accessor`` decorator as a side effect.
+tui = 'pyvista_tui._accessor'
+
 [project.urls]
 Homepage = 'https://github.com/pyvista/pyvista-tui'
 Issues = 'https://github.com/pyvista/pyvista-tui/issues'
