@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-from typing import TYPE_CHECKING, Literal, get_args
+from typing import TYPE_CHECKING, Literal, cast, get_args
 
 import numpy as np
 from PIL import Image
@@ -275,12 +275,13 @@ def _apply_mesh_post_processing(
 
     if isinstance(result, pv.MultiBlock):
         return result
+    dataset = cast('DataSet', result)
     if center:
-        result = result.copy()  # type: ignore[assignment]
-        result.points -= result.center  # type: ignore[misc]
+        dataset = dataset.copy()  # type: ignore[assignment]
+        dataset.points -= dataset.center  # type: ignore[misc]
     if rainbow:
-        result['_rainbow'] = result.points[:, 2]
-    return result
+        dataset['_rainbow'] = dataset.points[:, 2]
+    return dataset
 
 
 class _DeferredMesh:

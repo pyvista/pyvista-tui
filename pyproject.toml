@@ -27,7 +27,7 @@ keywords = ['3d', 'pyvista', 'terminal', 'tui', 'visualization']
 dependencies = [
   'cyclopts>=3.0',
   'Pillow>=10.0',
-  'pyvista>=0.43',
+  'pyvista>=0.48',
   'rich>=13.0',
   'textual>=1.0',
   'textual-image>=0.8.5',
@@ -52,6 +52,11 @@ pvtui = 'pyvista_tui.cli:app'
 # Value points at the plugin module; importing it runs the
 # ``@register_dataset_accessor`` decorator as a side effect.
 tui = 'pyvista_tui._accessor'
+
+[project.entry-points.'pyvista.plotter_components']
+# Value points at the plugin module; importing it runs the
+# ``@register_plotter_component`` decorator as a side effect.
+tui = 'pyvista_tui._plotter'
 
 [project.urls]
 Homepage = 'https://github.com/pyvista/pyvista-tui'

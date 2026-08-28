@@ -48,6 +48,26 @@ from pyvista_tui import plot
 plot(examples.download_fea_bracket(), scalars="Equivalent (von-Mises) Stress (psi)", cmap="turbo")
 ```
 
+Installed plugins also expose a `.tui` namespace on PyVista datasets and
+plotters:
+
+```python
+import pyvista as pv
+
+pv.OFF_SCREEN = True
+
+mesh = pv.Sphere()
+mesh.tui.plot(theme="matrix")
+
+plotter = pv.Plotter()
+plotter.add_mesh(mesh)
+plotter.tui.show(theme="braille")
+```
+
+For an on-screen plotter, call `plotter.show(auto_close=False)` before
+`plotter.tui.show()`. For scripts that only render in the terminal, set
+`pv.OFF_SCREEN = True` before constructing the plotter.
+
 ## Themes
 
 Text-based themes work in every terminal -- they use only Unicode and ANSI colors.
