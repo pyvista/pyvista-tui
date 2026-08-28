@@ -6,6 +6,7 @@ import logging
 import os
 import shutil
 import sys
+import termios
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,7 @@ _DEFAULT_CELL_HEIGHT_PX = 20
 # usable (falling back to ASCII) instead of bubbling a traceback.
 PROBE_ERRORS: tuple[type[Exception], ...] = (
     OSError,
+    termios.error,
     TimeoutError,
     UnicodeDecodeError,
     AttributeError,
@@ -220,6 +222,8 @@ def load_textual_image_class() -> type[Any] | None:
     cls = select_textual_image_protocol()
     if cls is not None:
         return cls
+    if os.environ.get('TERM_PROGRAM') == 'tmux' or 'TMUX' in os.environ:
+        return None
     try:
         from textual_image.renderable import Image as TermImage  # noqa: PLC0415
     except _LOAD_ERRORS:
