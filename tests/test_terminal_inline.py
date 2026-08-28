@@ -5,6 +5,7 @@ from __future__ import annotations
 import builtins
 from io import StringIO
 import sys
+import termios
 from unittest.mock import patch
 
 import numpy as np
@@ -120,10 +121,22 @@ def test_select_protocol_vscode(monkeypatch):
     assert select_textual_image_protocol() is HalfcellImage
 
 
+def test_select_protocol_tmux(monkeypatch):
+    monkeypatch.setenv('TERM_PROGRAM', 'tmux')
+    monkeypatch.setenv('TERM', 'xterm-color')
+    monkeypatch.setenv('TMUX', '/tmp/tmux-1000/default,1,0')
+    monkeypatch.delenv('KONSOLE_VERSION', raising=False)
+    monkeypatch.delenv('KITTY_WINDOW_ID', raising=False)
+
+    assert select_textual_image_protocol() is None
+    assert load_textual_image_class() is None
+
+
 def test_select_protocol_unknown_returns_none(monkeypatch):
     monkeypatch.delenv('TERM_PROGRAM', raising=False)
     monkeypatch.delenv('KONSOLE_VERSION', raising=False)
     monkeypatch.delenv('KITTY_WINDOW_ID', raising=False)
+    monkeypatch.delenv('TMUX', raising=False)
     monkeypatch.setenv('TERM', 'xterm-256color')
 
     assert select_textual_image_protocol() is None
@@ -153,6 +166,7 @@ def test_load_textual_image_class_returns_none_when_import_fails(monkeypatch):
     monkeypatch.delenv('TERM_PROGRAM', raising=False)
     monkeypatch.delenv('KONSOLE_VERSION', raising=False)
     monkeypatch.delenv('KITTY_WINDOW_ID', raising=False)
+    monkeypatch.delenv('TMUX', raising=False)
     monkeypatch.setenv('TERM', 'xterm-256color')
 
     real_import = builtins.__import__
@@ -161,6 +175,25 @@ def test_load_textual_image_class_returns_none_when_import_fails(monkeypatch):
         if name == 'textual_image.renderable':
             msg = 'forced import failure'
             raise ImportError(msg)
+        return real_import(name, *args, **kwargs)
+
+    with patch('builtins.__import__', side_effect=failing_import):
+        assert load_textual_image_class() is None
+
+
+def test_load_textual_image_class_returns_none_on_termios_probe_error(monkeypatch):
+    monkeypatch.delenv('TERM_PROGRAM', raising=False)
+    monkeypatch.delenv('KONSOLE_VERSION', raising=False)
+    monkeypatch.delenv('KITTY_WINDOW_ID', raising=False)
+    monkeypatch.delenv('TMUX', raising=False)
+    monkeypatch.setenv('TERM', 'xterm-256color')
+
+    real_import = builtins.__import__
+
+    def failing_import(name, *args, **kwargs):
+        if name == 'textual_image.renderable':
+            msg = 'forced termios failure'
+            raise termios.error(msg)
         return real_import(name, *args, **kwargs)
 
     with patch('builtins.__import__', side_effect=failing_import):
