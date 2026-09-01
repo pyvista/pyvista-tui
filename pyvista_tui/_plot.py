@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from pyvista_tui.display import launch_interactive, render_inline
 from pyvista_tui.renderer import prepare_mesh
@@ -35,6 +35,7 @@ def plot(
     rainbow: bool = False,
     center: bool = False,
     cpos: CposString | None = None,
+    **add_mesh_kwargs: Any,
 ) -> None:
     """Plot a PyVista mesh inline in the terminal.
 
@@ -104,6 +105,18 @@ def plot(
         ``'xz'``, ``'zx'``, ``'yz'``, ``'zy'``, or ``'iso'``. See
         :meth:`~pyvista_tui.renderer.OffScreenRenderer.set_cpos`.
 
+    **add_mesh_kwargs : dict, optional
+        Any other keyword arguments are forwarded verbatim to
+        :func:`pyvista.Plotter.add_mesh`, so PyVista options this
+        function does not name explicitly (``rgb``, ``ambient``,
+        ``culling``, ``style``, and so on) work here too.  The names
+        ``mesh``, ``mesh_or_path``, and ``loader`` are reserved by this
+        function and by
+        :func:`~pyvista_tui.renderer.prepare_mesh`, so they cannot be
+        forwarded.  ``wireframe`` and ``rainbow`` supersede a forwarded
+        ``style``, and the interactive wireframe toggle then returns to
+        surface rather than to that style.
+
     """
     prepared = prepare_mesh(
         mesh,
@@ -121,6 +134,7 @@ def plot(
         point_size=point_size,
         line_width=line_width,
         log_scale=log_scale,
+        **add_mesh_kwargs,
     )
 
     # Caller may have set wireframe independently of rainbow

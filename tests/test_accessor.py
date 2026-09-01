@@ -61,3 +61,12 @@ def test_accessor_registered_record_reports_pyvista_tui_as_source():
     record = records[0]
     assert record.target is pv.DataObject
     assert record.source.startswith('pyvista_tui._accessor')
+
+
+def test_accessor_plot_forwards_add_mesh_kwargs():
+    """Options ``plot`` does not name explicitly still reach ``add_mesh``."""
+    sphere = pv.Sphere()
+    with patch('pyvista_tui._plot.render_inline') as mock_render:
+        sphere.tui.plot(rgb=True)
+    prepared = mock_render.call_args.args[0]
+    assert prepared.mesh_kwargs['rgb'] is True

@@ -1,9 +1,22 @@
 from __future__ import annotations
 
+import numpy as np
 import pytest
 import pyvista as pv
 
-from pyvista_tui.renderer import OffScreenRenderer, apply_rainbow, build_mesh_kwargs, resolve_mesh
+from pyvista_tui.renderer import (
+    OffScreenRenderer,
+    apply_rainbow,
+    build_mesh_kwargs,
+    prepare_mesh,
+    resolve_mesh,
+)
+
+
+def _n_colors(frame):
+    """Return the number of distinct colors in a rendered frame."""
+    return len(frame.convert('RGB').getcolors(maxcolors=1_000_000))
+
 
 # --- build_mesh_kwargs ---
 
@@ -49,6 +62,17 @@ def test_build_mesh_kwargs_numeric_values():
     assert kwargs['opacity'] == 0.5
     assert kwargs['point_size'] == 10.0
     assert kwargs['line_width'] == 2.0
+
+
+def test_build_mesh_kwargs_forwards_unknown_kwargs():
+    kwargs = build_mesh_kwargs(rgb=True, ambient=0.3)
+    assert kwargs['rgb'] is True
+    assert kwargs['ambient'] == 0.3
+
+
+def test_build_mesh_kwargs_unknown_kwargs_override_defaults():
+    kwargs = build_mesh_kwargs(show_scalar_bar=True)
+    assert kwargs['show_scalar_bar'] is True
 
 
 # --- apply_rainbow ---
@@ -171,3 +195,104 @@ def test_renderer_render_depth():
         depth = r.render_depth()
         assert depth.mode == 'L'
         assert depth.size == (100, 100)
+
+
+def test_renderer_honors_caller_supplied_style():
+    """A ``style`` passed through to ``add_mesh`` is not overwritten."""
+    mesh = pv.Sphere()
+    with OffScreenRenderer(mesh, window_size=(100, 100), mesh_kwargs={'style': 'points'}) as r:
+        assert r._actor.prop.style == 'Points'
+
+
+def test_renderer_wireframe_overrides_caller_supplied_style():
+    mesh = pv.Sphere()
+    with OffScreenRenderer(
+        mesh, window_size=(100, 100), wireframe=True, mesh_kwargs={'style': 'points'}
+    ) as r:
+        assert r._actor.prop.style == 'Wireframe'
+
+
+def test_renderer_wireframe_toggle_restores_caller_style():
+    """Toggling wireframe off returns to the caller's style, not surface."""
+    mesh = pv.Sphere()
+    with OffScreenRenderer(mesh, window_size=(100, 100), mesh_kwargs={'style': 'points'}) as r:
+        r.toggle_wireframe()
+        assert r._actor.prop.style == 'Wireframe'
+        r.toggle_wireframe()
+        assert r._actor.prop.style == 'Points'
+
+
+def test_renderer_style_wireframe_syncs_toggle_state():
+    """``style='wireframe'`` leaves the ``w`` hotkey in the on state."""
+    mesh = pv.Sphere()
+    with OffScreenRenderer(mesh, window_size=(100, 100), mesh_kwargs={'style': 'wireframe'}) as r:
+        assert r.wireframe is True
+        r.toggle_wireframe()
+        assert r._actor.prop.style == 'Surface'
+
+
+def test_renderer_show_edges_syncs_toggle_state():
+    """``show_edges=True`` leaves the ``e`` hotkey in the on state."""
+    mesh = pv.Sphere()
+    with OffScreenRenderer(mesh, window_size=(100, 100), mesh_kwargs={'show_edges': True}) as r:
+        assert r._show_edges is True
+        r.toggle_edges()
+        assert r._actor.prop.show_edges is False
+
+
+@pytest.mark.parametrize('style', ['wireframe', 'Wireframe', 'WIREFRAME'])
+def test_renderer_style_wireframe_case_insensitive(style):
+    mesh = pv.Sphere()
+    with OffScreenRenderer(mesh, window_size=(100, 100), mesh_kwargs={'style': style}) as r:
+        assert r.wireframe is True
+
+
+@pytest.mark.parametrize('style', ['points_gaussian', None])
+def test_renderer_toggle_wireframe_normalizes_style(style):
+    """Styles ``Property.style`` rejects survive a toggle round-trip."""
+    mesh = pv.Sphere()
+    with OffScreenRenderer(mesh, window_size=(100, 100), mesh_kwargs={'style': style}) as r:
+        r.toggle_wireframe()
+        assert r._actor.prop.style == 'Wireframe'
+        r.toggle_wireframe()
+        assert r._actor.prop.style == 'Surface'
+
+
+def test_renderer_multiblock_wireframe_state():
+    """MultiBlock ignores ``style``, so the toggle starts in the off state."""
+    mb = pv.MultiBlock([pv.Sphere(), pv.Cube()])
+    with OffScreenRenderer(mb, window_size=(100, 100), wireframe=True) as r:
+        assert r.wireframe is False
+
+
+def test_renderer_array_scalars_skip_name_validation():
+    """Array-valued ``scalars`` is an ``add_mesh`` input, not a lookup name."""
+    mesh = pv.Sphere()
+    values = np.linspace(0.0, 1.0, mesh.n_points)
+    with OffScreenRenderer(mesh, window_size=(100, 100), mesh_kwargs={'scalars': values}) as r:
+        assert r.render_frame().size == (100, 100)
+
+
+def test_plot_forwards_reset_camera():
+    """``reset_camera`` is an ``add_mesh`` option, not a duplicate kwarg."""
+    mesh = pv.Sphere()
+    with OffScreenRenderer(mesh, window_size=(100, 100)) as r:
+        # The default reset frames the mesh, so the frame is not blank.
+        assert _n_colors(r.render_frame()) > 1
+        default_cpos = r._plotter.camera_position
+    with OffScreenRenderer(mesh, window_size=(100, 100), mesh_kwargs={'reset_camera': False}) as r:
+        # Forwarding the option must not collide with the default, and
+        # must actually change the camera the frame is rendered from.
+        assert r._plotter.camera_position != default_cpos
+
+
+def test_plot_forwards_rgb_to_vtk_mapper():
+    """``rgb=True`` reaches the mapper as direct scalar coloring."""
+    mesh = pv.Sphere()
+    rng = np.random.default_rng(seed=0)
+    mesh['colors'] = rng.integers(0, 255, (mesh.n_points, 3), dtype=np.uint8)
+    prepared = prepare_mesh(mesh_or_path=mesh, scalars='colors', rgb=True)
+    with OffScreenRenderer(
+        prepared.mesh, window_size=(100, 100), mesh_kwargs=prepared.mesh_kwargs
+    ) as r:
+        assert r._actor.mapper.GetColorMode() == 2  # VTK_COLOR_MODE_DIRECT_SCALARS

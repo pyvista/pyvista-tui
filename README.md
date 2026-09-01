@@ -48,6 +48,10 @@ from pyvista_tui import plot
 plot(examples.download_fea_bracket(), scalars="Equivalent (von-Mises) Stress (psi)", cmap="turbo")
 ```
 
+Any keyword argument `plot()` does not name itself is forwarded to
+`pyvista.Plotter.add_mesh`, so options such as `rgb`, `ambient`, and
+`culling` work too.
+
 Installed plugins also expose a `.tui` namespace on PyVista datasets and
 plotters:
 
