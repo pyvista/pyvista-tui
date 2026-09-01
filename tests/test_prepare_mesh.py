@@ -68,6 +68,11 @@ def test_prepare_mesh_color_passed_through():
     assert result.mesh_kwargs.get('color') == 'red'
 
 
+def test_prepare_mesh_forwards_unknown_kwargs():
+    result = prepare_mesh(mesh_or_path=pv.Sphere(), rgb=True)
+    assert result.mesh_kwargs['rgb'] is True
+
+
 def test_prepare_mesh_from_file_path(tmp_path):
     path = str(tmp_path / 'sphere.vtk')
     pv.Sphere().save(path)

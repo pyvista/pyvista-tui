@@ -41,7 +41,9 @@ class TuiAccessor:
         Thin wrapper around :func:`pyvista_tui.plot`. Accepts the same
         keyword arguments; see that function's docstring for the full
         parameter list (``theme``, ``scalars``, ``cmap``, ``cpos``,
-        ``interactive``, and so on).
+        ``interactive``, and so on). Any keyword it does not name is
+        forwarded to :func:`pyvista.Plotter.add_mesh`, so PyVista
+        options such as ``rgb`` work here too.
 
         Examples
         --------

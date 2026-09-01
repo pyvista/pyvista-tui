@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
-from typing import TYPE_CHECKING, Literal, cast, get_args
+from typing import TYPE_CHECKING, Any, Literal, cast, get_args
 
 import numpy as np
 from PIL import Image
@@ -61,6 +61,18 @@ CposString = Literal['xy', 'yx', 'xz', 'zx', 'yz', 'zy', 'iso']
 #: at load time.  ``test_cpos_literal_matches_pyvista`` cross-checks the
 #: Literal against the runtime set exposed by pyvista.
 CPOS_STRINGS: tuple[str, ...] = get_args(CposString)
+
+
+def _actor_style(style: object) -> str:
+    """Return the :attr:`pyvista.Property.style` matching an ``add_mesh`` style.
+
+    :func:`pyvista.Plotter.add_mesh` accepts styles that
+    :attr:`pyvista.Property.style` rejects (notably
+    ``'points_gaussian'``), so anything outside the representations the
+    property accepts falls back to ``'surface'``.
+    """
+    name = str(style).lower() if style else 'surface'
+    return name if name in ('surface', 'wireframe', 'points') else 'surface'
 
 
 def _rotate_turntable(camera: Camera, d_azimuth: float, d_elevation: float) -> None:
@@ -207,11 +219,17 @@ def build_mesh_kwargs(
     point_size: float | None = None,
     line_width: float | None = None,
     log_scale: bool = False,
+    **add_mesh_kwargs: Any,
 ) -> dict[str, object]:
     """Build keyword arguments for :func:`pyvista.Plotter.add_mesh`.
 
     Only explicitly-set values are included so that PyVista defaults
     are preserved for anything the caller did not specify.
+
+    Any additional keyword arguments are forwarded verbatim to
+    :func:`pyvista.Plotter.add_mesh`, so options this package does not
+    name explicitly (``rgb``, ``ambient``, ``culling``, and so on)
+    still work.
 
     Returns
     -------
@@ -240,6 +258,7 @@ def build_mesh_kwargs(
         kwargs['smooth_shading'] = True
     if log_scale:
         kwargs['log_scale'] = True
+    kwargs.update(add_mesh_kwargs)
     return kwargs
 
 
@@ -414,6 +433,7 @@ def prepare_mesh(
     point_size: float | None = None,
     line_width: float | None = None,
     log_scale: bool = False,
+    **add_mesh_kwargs: Any,
 ) -> PreparedMesh:
     """Resolve, prepare, and bundle a mesh with its rendering config.
 
@@ -471,6 +491,12 @@ def prepare_mesh(
     log_scale : bool, default: ``False``
         Logarithmic scalar scaling.
 
+    **add_mesh_kwargs : dict, optional
+        Additional keyword arguments forwarded verbatim to
+        :func:`pyvista.Plotter.add_mesh`.  The names this function
+        already owns -- ``mesh``, ``mesh_or_path``, and ``loader`` --
+        are reserved and cannot be forwarded.
+
     Returns
     -------
     PreparedMesh
@@ -489,6 +515,7 @@ def prepare_mesh(
         point_size=point_size,
         line_width=line_width,
         log_scale=log_scale,
+        **add_mesh_kwargs,
     )
 
     wireframe = False
@@ -641,11 +668,16 @@ class OffScreenRenderer:
         if is_multiblock:
             kwargs.setdefault('multi_colors', True)
         else:
-            kwargs['style'] = 'wireframe' if wireframe else 'surface'
+            # ``wireframe`` wins when set; otherwise honor a caller-supplied
+            # ``style`` and fall back to surface.
+            if wireframe:
+                kwargs['style'] = 'wireframe'
+            else:
+                kwargs.setdefault('style', 'surface')
 
             # Validate scalars if specified (not applicable to MultiBlock)
             scalars = kwargs.get('scalars')
-            if scalars is not None:
+            if isinstance(scalars, str):
                 all_names = [*resolved.point_data.keys(), *resolved.cell_data.keys()]
                 if scalars not in all_names:
                     msg = (
@@ -657,13 +689,22 @@ class OffScreenRenderer:
         # ``show()`` ran on an empty scene to overlap GL init with I/O,
         # which consumes the plotter's "first time" flag -- so
         # ``add_mesh`` will NOT auto-reset the camera here.  Reset it
-        # explicitly (``cpos`` below overrides).  Without this the
-        # camera stays at VTK's default ``(1, 1, 1)`` looking at the
-        # origin and the mesh renders outside the view frustum.
-        self._actor = self._plotter.add_mesh(resolved, reset_camera=True, **kwargs)  # type: ignore[arg-type]
+        # explicitly by default (``cpos`` below overrides), unless the
+        # caller asked otherwise.  Without this the camera stays at
+        # VTK's default ``(1, 1, 1)`` looking at the origin and the mesh
+        # renders outside the view frustum.
+        kwargs.setdefault('reset_camera', True)
+        self._actor = self._plotter.add_mesh(resolved, **kwargs)  # type: ignore[arg-type]
         self._mesh: DataSet | MultiBlock = resolved
-        self._wireframe = wireframe
-        self._show_edges = False
+
+        # Derive the toggle state from the kwargs actually used, so a
+        # caller-supplied ``style`` or ``show_edges`` stays in sync with
+        # the ``w`` and ``e`` hotkeys.
+        style = _actor_style(kwargs.get('style'))
+        self._wireframe = style == 'wireframe'
+        # Representation to return to when wireframe is toggled back off.
+        self._base_style = 'surface' if self._wireframe else style
+        self._show_edges = bool(kwargs.get('show_edges', False))
 
         # Build list of scalar arrays for cycling (skip multi-component).
         # MultiBlock has no point_data/cell_data, so scalars cycling is
@@ -807,7 +848,7 @@ class OffScreenRenderer:
     def toggle_wireframe(self) -> None:
         """Toggle between wireframe and surface representation."""
         self._wireframe = not self._wireframe
-        self._actor.prop.style = 'wireframe' if self._wireframe else 'surface'
+        self._actor.prop.style = 'wireframe' if self._wireframe else self._base_style
         self._dirty = True
 
     def toggle_edges(self) -> None:
