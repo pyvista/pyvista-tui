@@ -708,14 +708,18 @@ class OffScreenRenderer:
 
         # Build list of scalar arrays for cycling (skip multi-component).
         # MultiBlock has no point_data/cell_data, so scalars cycling is
-        # not supported for composite datasets.
+        # not supported for composite datasets.  The association of each
+        # entry is recorded next to its name because VTK has to be told
+        # explicitly whether the color array lives in the point or in
+        # the cell field data.
         self._scalars_names: list[str] = []
+        self._scalars_is_cell: list[bool] = []
         if not is_multiblock:
-            self._scalars_names = [
-                name
-                for name in [*resolved.point_data.keys(), *resolved.cell_data.keys()]
-                if resolved[name].ndim == 1
-            ]
+            dataset = cast('DataSet', resolved)
+            point_names = [name for name in dataset.point_data if dataset[name].ndim == 1]
+            cell_names = [name for name in dataset.cell_data if dataset[name].ndim == 1]
+            self._scalars_names = [*point_names, *cell_names]
+            self._scalars_is_cell = [False] * len(point_names) + [True] * len(cell_names)
         self._scalars_index: int = -1
 
         self._dirty = True
@@ -863,16 +867,26 @@ class OffScreenRenderer:
             return
         self._scalars_index = (self._scalars_index + 1) % len(self._scalars_names)
         name = self._scalars_names[self._scalars_index]
+        is_cell = self._scalars_is_cell[self._scalars_index]
 
         # Set active scalars on the mesh and update the mapper range.
         # This replaces the deprecated ``Plotter.update_scalars``.
         # _scalars_names is only populated for DataSet (not MultiBlock),
         # so self._mesh is guaranteed to be a DataSet here.
-        self._mesh.set_active_scalars(name)  # type: ignore[union-attr]
+        preference: Literal['point', 'cell'] = 'cell' if is_cell else 'point'
+        self._mesh.set_active_scalars(name, preference=preference)  # type: ignore[union-attr]
         mapper = self._actor.mapper
         arr = np.asarray(self._mesh[name])
         mapper.scalar_range = (float(arr.min()), float(arr.max()))
-        mapper.SetScalarModeToUsePointFieldData()
+        # VTK looks the color array up in the field data selected by the
+        # scalar mode.  The point field data only holds the point arrays,
+        # so a cell array has to be looked up in the cell field data --
+        # otherwise the colormap is silently dropped and the mesh is
+        # rendered in the flat default surface color.
+        if is_cell:
+            mapper.SetScalarModeToUseCellFieldData()
+        else:
+            mapper.SetScalarModeToUsePointFieldData()
         mapper.SelectColorArray(name)
         self._dirty = True
 
